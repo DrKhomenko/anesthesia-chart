@@ -68,7 +68,7 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
   const uPv = (k: keyof NonNullable<CaseRec['preInductionVitals']>) => (v: string) =>
     update({ preInductionVitals: { ...pv, [k]: v, at: pv.at ?? new Date().toISOString() } });
 
-  return <><div className="main"><div className="cols" style={{ gridTemplateColumns: '1.62fr 1fr' }}>
+  return <><div className="main"><div className="cols cols-premed">
     <div className="g">
       <section className="card" style={{ paddingBottom: 12 }}>
         <div className="h">Препараты премедикации
@@ -171,12 +171,12 @@ function AdminRow({ a, on, onSelect }: { a: DrugAdmin; on: boolean; onSelect: ()
   return <button type="button" className={`prow ${on ? 'on' : ''}`} onClick={onSelect}>
     <div style={{ paddingLeft: 6 }}><div className="pn">{a.drugNameSnapshot}{a.repeatOfId ? <span className="tag" style={{ marginLeft: 6 }}>повтор</span> : null}</div>
       <div className="pg">{a.genericNameSnapshot || unitDose}</div></div>
-    <div className="pv">{a.doseValue || '—'}</div>
-    <div className="pv">{a.totalMg != null ? fmt(a.totalMg, 3) : '—'}</div>
-    <div className="pv muted">{a.concentration != null ? fmt(a.concentration, 3) : '—'}</div>
-    <div className="pvl">{a.volumeMl != null ? fmt(a.volumeMl) : '—'}</div>
-    <div><span className="chip" style={{ margin: 0, background: '#2c2c2e', color: '#fff', height: 40, minHeight: 40 }}>{ROUTE_CHIP[a.route] ?? a.route}</span></div>
-    <div className="pv">{new Date(a.givenAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</div>
+    <div className="pv" data-u="мг/кг">{a.doseValue || '—'}</div>
+    <div className="pv" data-u="всего, мг">{a.totalMg != null ? fmt(a.totalMg, 3) : '—'}</div>
+    <div className="pv muted" data-u="мг/мл">{a.concentration != null ? fmt(a.concentration, 3) : '—'}</div>
+    <div className="pvl" data-u="мл">{a.volumeMl != null ? fmt(a.volumeMl) : '—'}</div>
+    <div data-u="путь"><span className="chip" style={{ margin: 0, background: '#2c2c2e', color: '#fff', height: 40, minHeight: 40 }}>{ROUTE_CHIP[a.route] ?? a.route}</span></div>
+    <div className="pv" data-u="время">{new Date(a.givenAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</div>
     <div className="pv hid" style={{ fontSize: 15, color: '#c7c7cc' }}>{a.givenBy || '—'}</div>
   </button>;
 }

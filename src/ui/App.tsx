@@ -5,6 +5,7 @@ import { SPECIES_RU, parseNum, fmt } from '../core/logic';
 import { HeaderScreen } from './HeaderScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { PremedScreen } from './PremedScreen';
+import { MaintenanceScreen } from './MaintenanceScreen';
 
 export const STAGES: { key: Stage; ru: string }[] = [
   { key: 'header', ru: 'Шапка' }, { key: 'premed', ru: 'Премедикация' }, { key: 'induction', ru: 'Индукция' },
@@ -47,7 +48,7 @@ export function App() {
       {route.v === 'case' ? <nav className="steps">{STAGES.map((s, i) =>
         <button key={s.key} className={s.key === route.stage ? 'on' : i < stageIdx ? 'done' : ''} onClick={() => go(`/case/${route.id}/${s.key}`)}>{s.ru}</button>)}</nav>
         : <div style={{ marginLeft: 'auto' }} />}
-      <div className={`pill ${save === 'saving' ? 'wait' : 'ok'}`}><i />{save === 'saving' ? 'Сохраняю…' : 'Сохранено на планшете'}</div>
+      <div className={`pill ${save === 'saving' ? 'wait' : 'ok'}`}><i /><span className="pill-full">{save === 'saving' ? 'Сохраняю…' : 'Сохранено на планшете'}</span><span className="pill-short">{save === 'saving' ? 'Сохраняю…' : 'Сохранено'}</span></div>
       <div className="net">{online ? 'Сеть есть' : 'Нет сети'}</div>
       <div className="clock"><span>Сейчас</span><b>{hhmm(now)}</b></div>
     </div>
@@ -57,7 +58,9 @@ export function App() {
       ? <HeaderScreen key={route.id} id={route.id} onSaved={setSave} />
       : route.stage === 'premed'
         ? <PremedScreen key={route.id} id={route.id} onSaved={setSave} />
-        : <Placeholder id={route.id} stage={route.stage} />)}
+        : route.stage === 'maintenance'
+          ? <MaintenanceScreen key={route.id} id={route.id} onSaved={setSave} />
+          : <Placeholder id={route.id} stage={route.stage} />)}
   </div>;
 }
 
@@ -80,6 +83,6 @@ function CaseList() {
 
 function Placeholder({ id, stage }: { id: string; stage: Stage }) {
   const s = STAGES.find(x => x.key === stage)!;
-  return <><div className="main"><div className="ph"><b>{s.ru}</b><span className="muted">Этот экран будет в следующем шаге. Шапка и премедикация уже сохраняются на планшете.</span></div></div>
+  return <><div className="main"><div className="ph"><b>{s.ru}</b><span className="muted">Этот экран будет в следующем шаге. Шапка, премедикация и показания поддержания уже сохраняются на планшете.</span></div></div>
     <div className="bar"><div style={{ flex: 1 }} /><button className="btn sec" onClick={() => go(`/case/${id}/header`)}>← К шапке</button></div></>;
 }

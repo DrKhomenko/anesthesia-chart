@@ -3,6 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, saveWithAudit, softDelete, addBreed, addDrugToFormulary, CLINIC_SETTINGS_ID, type Drug, type RouteRu, type ThresholdRec, type WeightRuleRec, type ExamLabLimitRec, type Breed } from '../db/db';
 import { PARAM_RU, PARAMS, parseNum, fmt, EXAM_LAB_PARAMS, type ConcUnit, type DoseUnit, type Species } from '../core/logic';
 import { go, type SaveState } from './App';
+import { EquipmentSection } from './EquipmentSection';
+import { RecognitionSection } from './RecognitionSection';
 
 const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь', 'ингаляционно'];
 const CONC: Record<ConcUnit, string> = { 'mg/ml': 'мг/мл', 'mcg/ml': 'мкг/мл', percent: '%' };
@@ -51,13 +53,13 @@ export function SettingsScreen({ onSaved }: { onSaved: (s: SaveState) => void })
   const getL = (s: Species, p: string) => limits.find(t => t.species === s && t.parameter === p);
   const setDrugNum = (d: Drug, k: 'minDose' | 'maxDose' | 'defaultConcentration', v: number | null) => save(() => saveWithAudit(db.drugs, 'Drug', { ...d, [k]: v }));
 
-  return <><div className="main"><div className="cols" style={{ gridTemplateColumns: '1fr 1fr' }}>
+  return <><div className="main"><div className="cols cols-eq">
     <div className="g">
       <section className="card"><div className="h">Добавить препарат в справочник</div><div className="g">
         <div className="g g2">
           <label className="field"><span className="fl">Название</span><input value={f.name} placeholder="напр. Медитин" onChange={e => setF({ ...f, name: e.target.value })} /></label>
           <label className="field"><span className="fl">Действующее вещество</span><input value={f.genericName} placeholder="необязательно" onChange={e => setF({ ...f, genericName: e.target.value })} /></label></div>
-        <div className="g" style={{ gridTemplateColumns: '1fr 1.2fr' }}>
+        <div className="g g-conc">
           <label className={`field ${concN === undefined ? 'errb' : ''}`}><span className="fl">Концентрация</span><input inputMode="decimal" value={f.conc} placeholder="число" onChange={e => setF({ ...f, conc: e.target.value })} /></label>
           <div className="seg">{(Object.keys(CONC) as ConcUnit[]).map(k => <button key={k} className={f.concUnit === k ? 'on' : ''} onClick={() => setF({ ...f, concUnit: k })}>{CONC[k]}</button>)}</div></div>
         <div className="row"><span className="muted" style={{ width: 150 }}>Доза в</span><div className="seg" style={{ flex: 1 }}>{(Object.keys(DOSE) as DoseUnit[]).map(k => <button key={k} className={f.doseUnit === k ? 'on' : ''} onClick={() => setF({ ...f, doseUnit: k })}>{DOSE[k]}</button>)}</div></div>
@@ -80,7 +82,7 @@ export function SettingsScreen({ onSaved }: { onSaved: (s: SaveState) => void })
             <button className="btn sm sec" onClick={() => save(() => saveWithAudit(db.drugs, 'Drug', { ...d, isActive: !d.isActive }))}>{d.isActive ? 'Скрыть' : 'Показать'}</button>
             <button className="x" aria-label="Удалить" onClick={() => { if (confirm(`Удалить «${d.name}» из справочника?`)) void save(() => softDelete(db.drugs, 'Drug', d.id)); }}>✕</button>
           </div>
-          <div className="g" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+          <div className="g g3">
             <div><div className="muted small">Конц.</div><NumCell value={d.defaultConcentration} onSave={v => setDrugNum(d, 'defaultConcentration', v)} /></div>
             <div><div className="muted small">Мин. доза</div><NumCell value={d.minDose ?? null} onSave={v => setDrugNum(d, 'minDose', v)} /></div>
             <div><div className="muted small">Макс. доза</div><NumCell value={d.maxDose ?? null} onSave={v => setDrugNum(d, 'maxDose', v)} /></div>
@@ -136,6 +138,8 @@ export function SettingsScreen({ onSaved }: { onSaved: (s: SaveState) => void })
     </div>)}
     <div className="muted small">Пусто = «не настроено»: в шапке карты значение не блокируется, только подписывается. Лимит веса здесь — клинический; отдельно выше задаются рамки для ловли опечаток.</div>
   </section>
+  <EquipmentSection onSaved={fn => void save(fn)} />
+  <RecognitionSection onSaved={fn => void save(fn)} />
   </div>
   <div className="bar"><span className="muted">Изменения сохраняются сразу и попадают в историю правок</span><div style={{ flex: 1 }} /><button className="btn sec" onClick={() => go('/')}>Готово</button></div></>;
 }

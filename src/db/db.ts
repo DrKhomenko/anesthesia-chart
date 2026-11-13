@@ -1,6 +1,8 @@
 import Dexie, { type Table } from 'dexie';
 import type { Species, DoseUnit, ConcUnit, VitalParam, ExamLabParam } from '../core/logic';
 import { defaultThresholds, EXAM_LAB_PARAMS, canAddCatalogItem, normalizeCatalogName, calcDose } from '../core/logic';
+import { PRESET_DEVICES, PRESET_UMEC12_ID, PRESET_WATO_ID, type DeviceType, type FieldRegion } from '../core/devices';
+import { findTickAtMinute, type ParsedValue } from '../core/vision';
 
 export type SyncState = 'savedLocal' | 'pending' | 'synced' | 'conflict';
 export interface Syncable { id: string; createdAt: string; updatedAt: string; deletedAt?: string | null; version: number; deviceId: string; syncState: SyncState }
@@ -45,6 +47,27 @@ export const CLINIC_SETTINGS_ID = 'clinic';
 export interface ClinicSettings extends Syncable {
   examLabLimitsApprovedBy: string; examLabLimitsApprovedAt: string | null;
 }
+export interface DeviceRec extends Syncable {
+  type: DeviceType; name: string; fieldKeys: string[];
+  regions: Record<string, FieldRegion>;
+  isPreset: boolean; isUserAdded: boolean; isActive: boolean;
+}
+export const LOCAL_SETTINGS_ID = 'local';
+export interface LocalSettings {
+  id: string;
+  recognitionBaseUrl: string;
+  recognitionModel: string;
+  recognitionApiKey: string;
+  storePhotoThumbnail: boolean;
+  activeMonitorId: string | null;
+  activeMachineId: string | null;
+}
+export function defaultLocalSettings(): LocalSettings {
+  return {
+    id: LOCAL_SETTINGS_ID, recognitionBaseUrl: '', recognitionModel: '', recognitionApiKey: '',
+    storePhotoThumbnail: false, activeMonitorId: PRESET_UMEC12_ID, activeMachineId: PRESET_WATO_ID,
+  };
+}
 export interface AuditEntry { id: string; caseId: string | null; entityType: string; entityId: string; field: string; oldValue: string | null; newValue: string | null; changedBy: string; changedAt: string; deviceId: string; reason?: string | null }
 export type DrugPhase = 'premed' | 'induction' | 'maintenance' | 'recovery' | 'cpr';
 export interface DrugAdmin extends Syncable {
@@ -56,7 +79,19 @@ export interface DrugAdmin extends Syncable {
   route: RouteRu; givenAt: string; givenBy: string; note: string;
   repeatOfId: string | null; nextDueAt: string | null;
 }
-export interface VitalTick extends Syncable { caseId: string; at: string; [k: string]: unknown }
+export interface VitalFields {
+  hr?: number | null; pr?: number | null; spo2?: number | null; etco2?: number | null; fico2?: number | null;
+  rr?: number | null; t1?: number | null; t2?: number | null; tempC?: number | null;
+  sys?: number | null; dia?: number | null; map?: number | null;
+  ventMode?: string | null; setPinsp?: number | null; setRr?: number | null; setIE?: string | null;
+  setTslope?: number | null; setPeep?: number | null; pPeak?: number | null; pPlat?: number | null;
+  peep?: number | null; vtInsp?: number | null; vtExp?: number | null; tidalVolume?: number | null;
+  mv?: number | null; rrMeas?: number | null; fio2?: number | null; raw?: number | null; compliance?: number | null;
+  sevoPct?: number | null; isoPct?: number | null; o2Flow?: number | null;
+  sourceMonitorId?: string | null; sourceMachineId?: string | null;
+  thumbnailMonitor?: string | null; thumbnailMachine?: string | null;
+}
+export interface VitalTick extends Syncable, VitalFields { caseId: string; at: string }
 export interface Infusion extends Syncable { caseId: string; line: number; [k: string]: unknown }
 export interface EventRec extends Syncable { caseId: string; number: number; at: string; text: string }
 export interface AlarmRec extends Syncable { caseId: string; at: string; parameter: VitalParam; value: number; message: string; acknowledgedAt?: string | null }
@@ -67,6 +102,7 @@ export class ChartDB extends Dexie {
   drugAdmins!: Table<DrugAdmin, string>; vitals!: Table<VitalTick, string>; infusions!: Table<Infusion, string>;
   events!: Table<EventRec, string>; alarms!: Table<AlarmRec, string>;
   breeds!: Table<Breed, string>; examLabLimits!: Table<ExamLabLimitRec, string>; clinicSettings!: Table<ClinicSettings, string>;
+  devices!: Table<DeviceRec, string>; localSettings!: Table<LocalSettings, string>;
   constructor(name = 'anesthesia-chart') {
     super(name);
     this.version(1).stores({
@@ -89,6 +125,20 @@ export class ChartDB extends Dexie {
       breeds: 'id, species, name, syncState, deletedAt',
       examLabLimits: 'id, [species+parameter], syncState',
       clinicSettings: 'id',
+    });
+    this.version(3).stores({
+      cases: 'id, updatedAt, date, syncState, deletedAt',
+      drugs: 'id, name, syncState, deletedAt',
+      thresholds: 'id, [species+parameter], syncState',
+      weightRules: 'id, &species, syncState',
+      audit: 'id, caseId, entityId, changedAt',
+      drugAdmins: 'id, caseId, phase, syncState', vitals: 'id, caseId, at, syncState',
+      infusions: 'id, caseId, syncState', events: 'id, caseId, at, syncState', alarms: 'id, caseId, at, syncState',
+      breeds: 'id, species, name, syncState, deletedAt',
+      examLabLimits: 'id, [species+parameter], syncState',
+      clinicSettings: 'id',
+      devices: 'id, type, name, syncState, deletedAt',
+      localSettings: 'id',
     });
   }
 }
@@ -148,6 +198,21 @@ export async function seed(database: ChartDB = db) {
       EXAM_LAB_PARAMS.map(p => ({ ...meta(), species, parameter: p.key, low: null, high: null }))));
   if (!(await database.clinicSettings.get(CLINIC_SETTINGS_ID)))
     await database.clinicSettings.add({ ...meta(), id: CLINIC_SETTINGS_ID, examLabLimitsApprovedBy: '', examLabLimitsApprovedAt: null });
+  await seedDevices(database);
+  if (!(await database.localSettings.get(LOCAL_SETTINGS_ID)))
+    await database.localSettings.add(defaultLocalSettings());
+}
+
+/** Предустановленные uMEC12 и WATO, если их ещё нет (удалённые пользователем не воскрешаем). */
+export async function seedDevices(database: ChartDB = db) {
+  for (const p of PRESET_DEVICES) {
+    if (await database.devices.get(p.id)) continue;
+    const rec: DeviceRec = {
+      ...meta(), id: p.id, type: p.type, name: p.name, fieldKeys: [...p.fieldKeys],
+      regions: { ...p.regions }, isPreset: true, isUserAdded: false, isActive: true,
+    };
+    await database.devices.add(rec);
+  }
 }
 
 export function newCase(): CaseRec {
@@ -216,4 +281,58 @@ export async function addDrugToFormulary(p: { name: string; genericName?: string
   };
   await saveWithAudit(database.drugs, 'Drug', drug, { database });
   return { ok: true, drug };
+}
+
+const TICK_KEY: Record<string, keyof VitalFields> = { nibpSys: 'sys', nibpDia: 'dia', nibpMap: 'map' };
+
+/** Перенос распознанных полей прибора в поля записи карты. Пустые значения пропускаем. */
+export function valuesToTickPatch(values: Record<string, ParsedValue>, type: DeviceType): Partial<VitalFields> {
+  const patch: Partial<VitalFields> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (v == null || v === '') continue;
+    const key = (TICK_KEY[k] ?? k) as keyof VitalFields;
+    (patch as Record<string, unknown>)[key] = v;
+  }
+  if (type === 'monitor' && patch.t2 != null && patch.tempC == null) patch.tempC = typeof patch.t2 === 'number' ? patch.t2 : null;
+  if (type === 'machine' && patch.vtInsp != null && patch.tidalVolume == null) patch.tidalVolume = typeof patch.vtInsp === 'number' ? patch.vtInsp : null;
+  return patch;
+}
+
+export function tickToValues(tick: VitalFields, fieldKeys: string[]): Record<string, ParsedValue> {
+  const out: Record<string, ParsedValue> = {};
+  for (const k of fieldKeys) {
+    const src = k === 'nibpSys' ? 'sys' : k === 'nibpDia' ? 'dia' : k === 'nibpMap' ? 'map' : k;
+    const v = (tick as Record<string, unknown>)[src];
+    out[k] = (v == null || v === '') ? null : v as ParsedValue;
+  }
+  return out;
+}
+
+/** Создать или дополнить запись той же минуты. Новые непустые поля дописываются, старые пустым не затираются. */
+export async function upsertVitalTick(opts: {
+  caseId: string; at: Date | string; patch: Partial<VitalFields>;
+  database?: ChartDB; reason?: string | null;
+}): Promise<VitalTick> {
+  const d = opts.database ?? db;
+  const atIso = typeof opts.at === 'string' ? opts.at : opts.at.toISOString();
+  const ticks = await d.vitals.where('caseId').equals(opts.caseId).toArray();
+  const existing = findTickAtMinute(ticks, atIso);
+  const clean: Partial<VitalFields> = {};
+  for (const [k, v] of Object.entries(opts.patch) as [keyof VitalFields, unknown][]) {
+    if (v != null && v !== '') (clean as Record<string, unknown>)[k] = v;
+  }
+  if (existing) {
+    return saveWithAudit(d.vitals, 'VitalTick', { ...existing, ...clean }, { caseId: opts.caseId, database: d, reason: opts.reason ?? null });
+  }
+  const rec: VitalTick = { ...meta(), caseId: opts.caseId, at: atIso, ...clean };
+  return saveWithAudit(d.vitals, 'VitalTick', rec, { caseId: opts.caseId, database: d, reason: opts.reason ?? null });
+}
+
+export async function getLocalSettings(database: ChartDB = db): Promise<LocalSettings> {
+  return (await database.localSettings.get(LOCAL_SETTINGS_ID)) ?? defaultLocalSettings();
+}
+
+/** Ключ API не пишем в историю правок. */
+export async function saveLocalSettings(next: LocalSettings, database: ChartDB = db): Promise<void> {
+  await database.localSettings.put({ ...next, id: LOCAL_SETTINGS_ID });
 }

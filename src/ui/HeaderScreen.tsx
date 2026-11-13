@@ -36,7 +36,7 @@ export function HeaderScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
   return <><div className="main"><div className="cols">
     <div className="g">
       <section className="card"><div className="h">Пациент<span className="r">Карта № {c.number} · {new Date(c.date).toLocaleDateString('ru-RU')}</span></div>
-        <div className="g" style={{ gridTemplateColumns: '1fr 1.3fr 1.25fr .8fr' }}>
+        <div className="g g-id">
           <Field label="Кличка" value={c.patientName} onChange={u('patientName')} />
           <div className="field"><span className="fl">Вид</span><div className="seg" style={{ background: 'transparent', padding: 0 }}>
             {(['dog', 'cat'] as Species[]).map(s => <button key={s} className={c.species === s ? 'on' : ''} onClick={() => update({ species: s, weightConfirmedAt: null })}>{s === 'dog' ? 'Собака' : 'Кошка'}</button>)}</div></div>
@@ -44,7 +44,7 @@ export function HeaderScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
             <option value="">—</option><option value="female">Самка</option><option value="femaleSpayed">Самка, стер.</option><option value="male">Самец</option><option value="maleNeutered">Самец, кастр.</option></select></label>
           <Field label="Возраст" value={c.ageText} onChange={u('ageText')} placeholder="напр. 6 лет" />
         </div>
-        <div className="g" style={{ gridTemplateColumns: '1fr 1.3fr 1.3fr', marginTop: 14 }}>
+        <div className="g g-weight" style={{ marginTop: 14 }}>
           <label className={`field big ${wcls}`}><span className="fl">Вес, кг</span>
             <input inputMode="decimal" autoComplete="off" value={c.weightKg} placeholder="—" onChange={e => update({ weightKg: e.target.value, weightConfirmedAt: null })} />
             {wClin.state === 'warn' && (wc.state === 'ok' || wc.state === 'not-configured') && <span className="lh w">{wClin.message}</span>}

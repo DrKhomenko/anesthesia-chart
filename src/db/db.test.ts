@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect } from 'vitest';
-import { ChartDB, saveWithAudit, seed, newCase, softDelete, addBreed, addDrugToFormulary, STARTER_BREEDS, CLINIC_SETTINGS_ID } from './db';
+import { ChartDB, saveWithAudit, seed, newCase, softDelete, addBreed, addDrugToFormulary, STARTER_BREEDS, CLINIC_SETTINGS_ID, LOCAL_SETTINGS_ID, upsertVitalTick, valuesToTickPatch, getLocalSettings } from './db';
+import { PRESET_UMEC12_ID, PRESET_WATO_ID } from '../core/devices';
 
 describe('db', () => {
   it('seed: пороги с бланка, препаратов нет, короткий список пород, пустые лимиты', async () => {
@@ -60,6 +61,35 @@ describe('db', () => {
     const again = await addBreed('dog', 'хаски', d);
     expect(again.ok && again.breed.deletedAt == null).toBe(true);
     expect(await d.breeds.filter(b => b.species === 'dog' && normalizeLive(b.name, 'Хаски')).count()).toBe(1);
+  });
+  it('seed: два предустановленных прибора и настройки распознавания', async () => {
+    const d = new ChartDB('t7'); await seed(d);
+    const devs = await d.devices.toArray();
+    expect(devs.map(x => x.id).sort()).toEqual([PRESET_UMEC12_ID, PRESET_WATO_ID].sort());
+    expect(devs.every(x => x.isPreset && x.isActive)).toBe(true);
+    const loc = await getLocalSettings(d);
+    expect(loc.id).toBe(LOCAL_SETTINGS_ID);
+    expect(loc.storePhotoThumbnail).toBe(false);
+    expect(loc.recognitionApiKey).toBe('');
+    expect(loc.activeMonitorId).toBe(PRESET_UMEC12_ID);
+  });
+  it('два частичных снимка сливаются в одну минуту карты', async () => {
+    const d = new ChartDB('t8'); await seed(d);
+    const c = newCase(); await saveWithAudit(d.cases, 'Case', c, { database: d });
+    const at = new Date(2026, 10, 13, 12, 47, 47);
+    const mon = valuesToTickPatch({ hr: 142, spo2: 100, t2: 38.2, nibpSys: null }, 'monitor');
+    const a = await upsertVitalTick({ caseId: c.id, at, patch: { ...mon, sourceMonitorId: PRESET_UMEC12_ID }, database: d });
+    expect(a.hr).toBe(142); expect(a.tempC).toBeCloseTo(38.2); expect(a.sys).toBeUndefined();
+    const wato = valuesToTickPatch({ ventMode: 'PCV', vtInsp: 45, fio2: 72, hr: null }, 'machine');
+    const b = await upsertVitalTick({ caseId: c.id, at: new Date(2026, 10, 13, 12, 47, 10), patch: { ...wato, sourceMachineId: PRESET_WATO_ID }, database: d });
+    expect(b.id).toBe(a.id);
+    expect(b.hr).toBe(142);
+    expect(b.ventMode).toBe('PCV');
+    expect(b.vtInsp).toBe(45);
+    expect(b.fio2).toBe(72);
+    expect(b.sourceMonitorId).toBe(PRESET_UMEC12_ID);
+    expect(b.sourceMachineId).toBe(PRESET_WATO_ID);
+    expect(await d.vitals.where('caseId').equals(c.id).count()).toBe(1);
   });
 });
 
