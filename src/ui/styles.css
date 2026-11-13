@@ -1,0 +1,66 @@
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#000;--card:#111113;--field:#1c1c1e;--line:#1c1c1e;--mut:#8e8e93;--txt:#F2F2F7;--green:#30d158;--blue:#0a84ff;--orange:#ff9f0a;--red:#ff453a;--cyan:#64d2ff}
+html,body,#root{height:100%;background:#000;color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Inter',system-ui,sans-serif;font-feature-settings:'tnum' 1;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+body{overscroll-behavior:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,textarea,select{font:inherit;color:inherit;background:none;border:0;outline:0;width:100%}
+.app{display:flex;flex-direction:column;height:100%;padding-top:env(safe-area-inset-top)}
+.top{min-height:68px;display:flex;align-items:center;padding:0 24px;gap:18px;border-bottom:1px solid var(--line);flex-wrap:nowrap}
+.pt{display:flex;flex-direction:column;min-width:230px;max-width:300px}
+.pt b{font-size:22px;font-weight:700;letter-spacing:-.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt span{font-size:14px;color:var(--mut);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.steps{display:flex;gap:4px;margin:0 auto;background:var(--card);border-radius:14px;padding:4px}
+.steps button{height:44px;padding:0 13px;display:flex;align-items:center;border-radius:11px;font-size:15px;color:var(--mut);font-weight:500;gap:7px;white-space:nowrap}
+.steps button.done{color:#c7c7cc}.steps button.done:before{content:'✓';color:var(--green);font-weight:700}
+.steps button.on{background:#2c2c2e;color:#fff;font-weight:600}
+.pill{height:36px;padding:0 14px;border-radius:18px;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;white-space:nowrap}
+.pill i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.pill.ok{background:rgba(48,209,88,.14);color:var(--green)}.pill.ok i{background:var(--green)}
+.pill.wait{background:rgba(255,214,10,.13);color:#ffd60a}.pill.wait i{background:#ffd60a}
+.net{font-size:13px;color:var(--mut);white-space:nowrap}
+.clock{font-size:15px;color:var(--mut);white-space:nowrap}.clock b{color:#fff;font-size:22px;font-weight:600;margin-left:6px}
+.main{flex:1;overflow:auto;padding:18px 24px 24px;-webkit-overflow-scrolling:touch}
+.bar{min-height:88px;border-top:1px solid var(--line);display:flex;align-items:center;padding:0 24px calc(env(safe-area-inset-bottom)) ;gap:14px;background:#000}
+.btn{min-height:56px;padding:0 28px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;gap:8px;white-space:nowrap}
+.btn.pri{background:var(--green);color:#000}.btn.sec{background:var(--field);color:#fff}
+.btn.ghost{color:var(--blue);border:1px solid #2c2c2e}.btn.sm{min-height:44px;font-size:16px;padding:0 18px;border-radius:12px}
+.btn:disabled{opacity:.4}
+.card{background:var(--card);border-radius:20px;padding:18px 20px}
+.h{font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--mut);font-weight:600;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:22px}
+.h .r{text-transform:none;letter-spacing:0;font-size:15px;color:#c7c7cc}
+.link{color:var(--blue);font-size:15px;font-weight:600;min-height:44px;padding:0 4px;text-transform:none;letter-spacing:0}
+.field{background:var(--field);border-radius:12px;min-height:52px;padding:7px 14px;display:flex;flex-direction:column;justify-content:center;border:1.5px solid transparent}
+.field:focus-within{border-color:#3a3a3c}
+.field.okb{border-color:var(--green)}.field.warnb{border-color:var(--orange)}.field.errb{border-color:var(--red)}
+.field .fl{font-size:12px;color:var(--mut);margin-bottom:1px}
+.field input,.field select{font-size:18px;font-weight:600;min-height:26px}
+.field input::placeholder{color:#48484a;font-weight:500}
+.field.big input{font-size:24px}
+.seg{display:flex;background:var(--field);border-radius:12px;padding:3px;gap:3px}
+.seg button{flex:1;min-height:44px;display:flex;align-items:center;justify-content:center;border-radius:9px;font-size:17px;font-weight:600;color:#aeaeb2;min-width:44px;padding:0 8px}
+.seg button.on{background:#3a3a3c;color:#fff}
+.g{display:grid;gap:14px}.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.cols{display:grid;grid-template-columns:1.12fr 1fr;gap:16px;align-items:start}
+.muted{color:var(--mut)}.small{font-size:13px}
+.warn{background:rgba(255,159,10,.12);border:1px solid rgba(255,159,10,.5);border-radius:16px;padding:12px 16px;color:#ffd8a0;font-size:15px}
+.note{background:var(--field);border-radius:12px;padding:10px 14px;color:var(--mut);font-size:14px}
+.bv{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.bv .field{background:transparent;padding:0;min-height:0}
+.bv input{font-size:44px;font-weight:600;letter-spacing:-1px;line-height:1.05}
+.bv .hr input{color:var(--red)}
+.row{display:flex;gap:10px;align-items:center}
+.chip{min-height:44px;padding:0 16px;border-radius:22px;background:var(--field);display:inline-flex;align-items:center;font-size:15px;font-weight:500;color:#d1d1d6;gap:6px}
+.x{min-width:44px;min-height:44px;border-radius:12px;color:var(--mut);font-size:20px}
+.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.casecard{text-align:left;display:flex;flex-direction:column;gap:6px;min-height:110px}
+.casecard b{font-size:22px}
+table.t{width:100%;border-collapse:separate;border-spacing:0 6px}
+table.t th{font-size:13px;color:var(--mut);font-weight:600;text-align:left;padding:0 8px}
+table.t td{padding:0 4px}
+table.t td.l{font-size:17px;font-weight:600;padding-left:8px}
+.tin{background:var(--field);border-radius:10px;min-height:44px;padding:0 12px;font-size:17px;font-weight:600}
+.tag{font-size:12px;border-radius:8px;padding:3px 8px;background:#2c2c2e;color:#c7c7cc;white-space:nowrap}
+.tag.o{background:rgba(255,159,10,.18);color:var(--orange)}
+.ph{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;height:100%;text-align:center}
+.ph b{font-size:34px}
+@media (max-width:1200px){.steps button{padding:0 9px;font-size:14px}.pt{min-width:180px}.clock span{display:none}}
