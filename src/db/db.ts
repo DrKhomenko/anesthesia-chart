@@ -60,6 +60,7 @@ export interface LocalSettings {
   recognitionBaseUrl: string;
   recognitionModel: string;
   recognitionApiKey: string;
+  recognitionFallbackModels: string[];
   storePhotoThumbnail: boolean;
   activeMonitorId: string | null;
   activeMachineId: string | null;
@@ -68,6 +69,7 @@ export function defaultLocalSettings(): LocalSettings {
   return {
     id: LOCAL_SETTINGS_ID, recognitionProvider: 'on-device',
     recognitionBaseUrl: '', recognitionModel: '', recognitionApiKey: '',
+    recognitionFallbackModels: [],
     storePhotoThumbnail: false, activeMonitorId: PRESET_UMEC12_ID, activeMachineId: PRESET_WATO_ID,
   };
 }
@@ -345,7 +347,10 @@ export async function upsertVitalTick(opts: {
 export async function getLocalSettings(database: ChartDB = db): Promise<LocalSettings> {
   const cur = await database.localSettings.get(LOCAL_SETTINGS_ID);
   if (!cur) return defaultLocalSettings();
-  return { ...defaultLocalSettings(), ...cur, id: LOCAL_SETTINGS_ID };
+  const fallbacks = Array.isArray((cur as Partial<LocalSettings>).recognitionFallbackModels)
+    ? (cur as LocalSettings).recognitionFallbackModels.filter(x => typeof x === 'string' && x.trim())
+    : [];
+  return { ...defaultLocalSettings(), ...cur, id: LOCAL_SETTINGS_ID, recognitionFallbackModels: fallbacks };
 }
 
 /** Ключ API не пишем в историю правок. */

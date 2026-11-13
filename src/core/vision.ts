@@ -65,10 +65,35 @@ export function parseJsonRelaxed(text: string): unknown | null {
   try { return JSON.parse(src.replace(/,\s*([}\]])/g, '$1')); } catch { return null; }
 }
 
+function normKey(s: string): string {
+  return s.trim().toLowerCase().replace(/[_\s-]+/g, '').replace(/₂/g, '2').replace(/°c/g, 'c');
+}
+
 function lookup(obj: Record<string, unknown>, field: DeviceField): unknown {
   if (field.key in obj) return obj[field.key];
   for (const a of field.aliases ?? []) if (a in obj) return obj[a];
+  const want = new Set([field.key, ...(field.aliases ?? [])].map(normKey));
+  for (const [k, v] of Object.entries(obj)) if (want.has(normKey(k))) return v;
   return undefined;
+}
+
+const WRAPPER_KEYS = ['data', 'result', 'fields', 'values', 'reading', 'output', 'json', 'parameters'];
+
+function hasKnownField(obj: Record<string, unknown>, fields: DeviceField[]): boolean {
+  if (['deviceTime', 'deviceClock', 'clock', 'time', 'Time', 'nibp', 'NIBP', 'nibpValue'].some(k => k in obj)) return true;
+  return fields.some(f => lookup(obj, f) !== undefined);
+}
+
+/** Если модель обернула поля в { data: {...} } или подобное — берём внутренний объект. */
+export function unwrapModelObject(obj: Record<string, unknown>, fields: DeviceField[]): Record<string, unknown> {
+  if (hasKnownField(obj, fields)) return obj;
+  for (const w of WRAPPER_KEYS) {
+    const inner = asRecord(obj[w]);
+    if (inner && hasKnownField(inner, fields)) return inner;
+  }
+  const nested = Object.values(obj).map(asRecord).filter((v): v is Record<string, unknown> => !!v);
+  if (nested.length === 1 && hasKnownField(nested[0], fields)) return nested[0];
+  return obj;
 }
 
 function coerce(raw: unknown, field: DeviceField): ParsedValue {
@@ -95,12 +120,13 @@ export function parseModelOutput(text: string, fields: DeviceField[]): ParsedRea
   const empty: Record<string, ParsedValue> = {};
   for (const f of fields) empty[f.key] = null;
   const data = parseJsonRelaxed(text);
-  const obj = asRecord(data);
-  if (!obj) return { values: empty, deviceTimeRaw: null, ok: false, error: 'Модель вернула не JSON' };
+  const rawObj = asRecord(data);
+  if (!rawObj) return { values: empty, deviceTimeRaw: null, ok: false, error: 'Модель вернула не JSON' };
+  const obj = unwrapModelObject(rawObj, fields);
 
   const values = { ...empty };
   const nibpFields = fields.filter(f => f.key === 'nibpSys' || f.key === 'nibpDia' || f.key === 'nibpMap');
-  const nibpRaw = obj.nibp ?? obj.NIBP ?? obj.nibpValue;
+  const nibpRaw = obj.nibp ?? obj.NIBP ?? obj.nibpValue ?? lookup(obj, { key: 'nibp', label: '', unit: '', kind: 'text', aliases: ['NIBP', 'nibpValue', 'bp'] });
   if (nibpFields.length && nibpRaw != null) {
     const n = parseNibp(nibpRaw);
     if (values.nibpSys === null && fields.some(f => f.key === 'nibpSys')) values.nibpSys = n.sys;

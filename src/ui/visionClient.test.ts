@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { DeviceRec } from '../db/db';
 import {
-  OPENROUTER_BASE_URL, OPENROUTER_DEFAULT_MODEL, OPENROUTER_FALLBACK_MODELS, OPENROUTER_FREE_VISION_MODELS,
-  OPENROUTER_RATE_LIMIT_MSG, OPENROUTER_TITLE, applyOpenRouterFreePreset, appSiteUrl, chatCompletionsUrl,
-  asHeaderValue, cloudHttpError, hasRecognitionReady, isCloudRequestFailure, isOpenRouterUrl, openRouterHeaders, recognizeImage,
+  OPENROUTER_BASE_URL, OPENROUTER_CREDITS_MSG, OPENROUTER_DEFAULT_MODEL, OPENROUTER_FREE_DEFAULT_MODEL,
+  OPENROUTER_FREE_FALLBACK_MODELS, OPENROUTER_FREE_LIMIT_MSG, OPENROUTER_FREE_VISION_MODELS,
+  OPENROUTER_PAID_FALLBACK_MODELS, OPENROUTER_PAID_VISION_MODELS, OPENROUTER_RATE_LIMIT_MSG, OPENROUTER_TITLE,
+  applyOpenRouterFreePreset, applyOpenRouterPaidPreset, appSiteUrl, chatCompletionsUrl,
+  asHeaderValue, cloudHttpError, cloudNotReadyReason, extractMessageContent, hasRecognitionReady,
+  isCloudRequestFailure, isOpenRouterUrl, openRouterHeaders, parseModelList, probeRecognition,
+  recognizeImage, recognizeWithFallback, uniqueModels,
 } from './visionClient';
 
 describe('chatCompletionsUrl', () => {
@@ -39,22 +43,29 @@ describe('OpenRouter preset', () => {
     expect(isOpenRouterUrl('')).toBe(false);
   });
 
-  it('ставит облако, адрес и модель по умолчанию, но не затирает выбранную бесплатную модель', () => {
-    expect(applyOpenRouterFreePreset({})).toEqual({
+  it('платный набор ставит Gemini 2.5 Flash и запасные модели', () => {
+    const p = applyOpenRouterPaidPreset({});
+    expect(p).toEqual({
       recognitionProvider: 'cloud',
       recognitionBaseUrl: OPENROUTER_BASE_URL,
       recognitionModel: OPENROUTER_DEFAULT_MODEL,
+      recognitionFallbackModels: [...OPENROUTER_PAID_FALLBACK_MODELS],
     });
-    expect(applyOpenRouterFreePreset({ recognitionModel: '  openai/gpt-4o  ' }).recognitionModel).toBe(OPENROUTER_DEFAULT_MODEL);
-    expect(applyOpenRouterFreePreset({ recognitionModel: OPENROUTER_FALLBACK_MODELS[0] }).recognitionModel).toBe(OPENROUTER_FALLBACK_MODELS[0]);
+    expect(p.recognitionModel).toBe('google/gemini-2.5-flash');
+    expect(p.recognitionFallbackModels[0]).toBe('openai/gpt-4o-mini');
+    expect(applyOpenRouterPaidPreset({ recognitionModel: 'openai/gpt-4o-mini' }).recognitionModel).toBe('openai/gpt-4o-mini');
+    expect(applyOpenRouterPaidPreset({ recognitionModel: 'google/gemma-4-31b-it:free' }).recognitionModel).toBe(OPENROUTER_DEFAULT_MODEL);
   });
 
-  it('в списке есть модель по умолчанию и запасные, все с суффиксом :free', () => {
-    const ids = OPENROUTER_FREE_VISION_MODELS.map(m => m.id);
-    expect(ids[0]).toBe(OPENROUTER_DEFAULT_MODEL);
-    expect(ids).toContain(OPENROUTER_FALLBACK_MODELS[0]);
-    expect(ids).toContain(OPENROUTER_FALLBACK_MODELS[1]);
-    expect(ids.every(id => id.endsWith(':free'))).toBe(true);
+  it('бесплатный набор не затирает выбранную бесплатную модель', () => {
+    expect(applyOpenRouterFreePreset({}).recognitionModel).toBe(OPENROUTER_FREE_DEFAULT_MODEL);
+    expect(applyOpenRouterFreePreset({ recognitionModel: '  openai/gpt-4o  ' }).recognitionModel).toBe(OPENROUTER_FREE_DEFAULT_MODEL);
+    expect(applyOpenRouterFreePreset({ recognitionModel: OPENROUTER_FREE_FALLBACK_MODELS[0] }).recognitionModel).toBe(OPENROUTER_FREE_FALLBACK_MODELS[0]);
+  });
+
+  it('в платном списке есть модель по умолчанию, в бесплатном — только :free', () => {
+    expect(OPENROUTER_PAID_VISION_MODELS.map(m => m.id)[0]).toBe(OPENROUTER_DEFAULT_MODEL);
+    expect(OPENROUTER_FREE_VISION_MODELS.map(m => m.id).every(id => id.endsWith(':free'))).toBe(true);
   });
 
   it('добавляет заголовки HTTP-Referer и X-Title', () => {
@@ -66,10 +77,29 @@ describe('OpenRouter preset', () => {
     expect(appSiteUrl()).toMatch(/\/$/);
   });
 
-  it('для 429 на OpenRouter показывает сообщение о бесплатном лимите', () => {
+  it('для 429/402 показывает понятные сообщения', () => {
     expect(cloudHttpError(429, '{"error":{"message":"Rate limit"}}', OPENROUTER_BASE_URL)).toBe(OPENROUTER_RATE_LIMIT_MSG);
+    expect(cloudHttpError(429, '', OPENROUTER_BASE_URL, 'google/gemma-4-31b-it:free')).toBe(OPENROUTER_FREE_LIMIT_MSG);
     expect(cloudHttpError(429, '', 'https://example.com/v1')).toBe('Превышен лимит запросов, попробуйте позже');
-    expect(cloudHttpError(401, '{"error":"Unauthorized"}', OPENROUTER_BASE_URL)).toContain('401');
+    expect(cloudHttpError(402, '{"error":{"message":"Insufficient credits"}}', OPENROUTER_BASE_URL)).toBe(OPENROUTER_CREDITS_MSG);
+    expect(cloudHttpError(401, '{"error":"Unauthorized"}', OPENROUTER_BASE_URL)).toMatch(/ключ/i);
+  });
+});
+
+describe('список моделей и готовность', () => {
+  it('разбирает запасные модели', () => {
+    expect(parseModelList('openai/gpt-4o-mini, nvidia/nemotron-3.5-super-vl:free')).toEqual([
+      'openai/gpt-4o-mini', 'nvidia/nemotron-3.5-super-vl:free',
+    ]);
+    expect(uniqueModels('google/gemini-2.5-flash', ['google/gemini-2.5-flash', 'openai/gpt-4o-mini'])).toEqual([
+      'google/gemini-2.5-flash', 'openai/gpt-4o-mini',
+    ]);
+  });
+  it('объясняет, почему ключ не готов, и не путает это с сетью', () => {
+    expect(cloudNotReadyReason({ recognitionBaseUrl: OPENROUTER_BASE_URL, recognitionModel: OPENROUTER_DEFAULT_MODEL, recognitionApiKey: '' }))
+      .toMatch(/ключ/i);
+    expect(cloudNotReadyReason({ recognitionBaseUrl: OPENROUTER_BASE_URL, recognitionModel: OPENROUTER_DEFAULT_MODEL, recognitionApiKey: 'sk-test' }))
+      .toBeNull();
   });
 });
 
@@ -103,8 +133,10 @@ describe('recognizeImage', () => {
     expect(headers['X-Title']).toBe(asHeaderValue(OPENROUTER_TITLE));
     const body = JSON.parse(String(seen?.body));
     expect(body.model).toBe(OPENROUTER_DEFAULT_MODEL);
+    expect(body.response_format).toEqual({ type: 'json_object' });
     expect(body.messages[0].content[1].type).toBe('image_url');
     expect(body.messages[0].content[1].image_url.url).toBe('data:image/jpeg;base64,xxxx');
+    expect(body.messages[0].content[1].image_url.detail).toBe('high');
   });
 
   it('при 429 ставит requestFailed и текст про исчерпанный лимит', async () => {
@@ -135,5 +167,105 @@ describe('recognizeImage', () => {
     });
     expect(parse.ok).toBe(false);
     expect(isCloudRequestFailure(parse)).toBe(false);
+  });
+});
+
+describe('extractMessageContent', () => {
+  it('забирает текст из строки и из массива частей', () => {
+    expect(extractMessageContent({ choices: [{ message: { content: '{"hr":1}' } }] })).toBe('{"hr":1}');
+    expect(extractMessageContent({ choices: [{ message: { content: [{ type: 'text', text: '{"hr":2}' }] } }] })).toBe('{"hr":2}');
+  });
+});
+
+describe('recognizeWithFallback', () => {
+  it('после 429 на первой модели берёт ответ второй', async () => {
+    const calls: string[] = [];
+    const fetchFn: typeof fetch = async (_url, init) => {
+      const model = JSON.parse(String(init?.body)).model as string;
+      calls.push(model);
+      if (model === OPENROUTER_DEFAULT_MODEL) return new Response('{"error":{"message":"Rate limit"}}', { status: 429 });
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: '{"hr": 77, "spo2": 96}' } }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    const res = await recognizeWithFallback({
+      dataUrl: 'data:image/jpeg;base64,xxxx', device,
+      baseUrl: OPENROUTER_BASE_URL, model: OPENROUTER_DEFAULT_MODEL, apiKey: 'sk-test',
+      fallbackModels: [...OPENROUTER_PAID_FALLBACK_MODELS],
+      fetchFn,
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.reading.values.hr).toBe(77);
+      expect(res.modelUsed).toBe('openai/gpt-4o-mini');
+    }
+    expect(calls[0]).toBe(OPENROUTER_DEFAULT_MODEL);
+    expect(calls[1]).toBe('openai/gpt-4o-mini');
+  });
+
+  it('при не-JSON пробует следующую модель', async () => {
+    const fetchFn: typeof fetch = async (_url, init) => {
+      const model = JSON.parse(String(init?.body)).model as string;
+      const content = model === 'bad-model' ? 'не удалось прочитать' : '{"hr": 61, "spo2": 99}';
+      return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+    };
+    const res = await recognizeWithFallback({
+      dataUrl: 'data:image/jpeg;base64,xxxx', device,
+      baseUrl: OPENROUTER_BASE_URL, model: 'bad-model', apiKey: 'sk-test',
+      fallbackModels: [OPENROUTER_DEFAULT_MODEL],
+      fetchFn,
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.reading.values.hr).toBe(61);
+  });
+
+  it('на 401 не ходит по цепочке', async () => {
+    let n = 0;
+    const fetchFn: typeof fetch = async () => { n += 1; return new Response('{"error":"Unauthorized"}', { status: 401 }); };
+    const res = await recognizeWithFallback({
+      dataUrl: 'data:image/jpeg;base64,xxxx', device,
+      baseUrl: OPENROUTER_BASE_URL, model: OPENROUTER_DEFAULT_MODEL, apiKey: 'sk-bad',
+      fallbackModels: ['openai/gpt-4o-mini'],
+      fetchFn,
+    });
+    expect(res.ok).toBe(false);
+    expect(n).toBe(1);
+    if (!res.ok) expect(res.error).toMatch(/ключ/i);
+  });
+});
+
+describe('probeRecognition', () => {
+  it('при 200 сообщает, что подключение в порядке', async () => {
+    const res = await probeRecognition({
+      baseUrl: OPENROUTER_BASE_URL, model: OPENROUTER_DEFAULT_MODEL, apiKey: 'sk-test',
+      fetchFn: async () => new Response(JSON.stringify({ choices: [{ message: { content: 'pong' } }] }), { status: 200 }),
+    });
+    expect(res).toEqual({ ok: true, detail: 'Подключение в порядке' });
+  });
+  it('при 402 просит пополнить баланс', async () => {
+    const res = await probeRecognition({
+      baseUrl: OPENROUTER_BASE_URL, model: OPENROUTER_DEFAULT_MODEL, apiKey: 'sk-test',
+      fetchFn: async () => new Response('{"error":{"message":"Payment required"}}', { status: 402 }),
+    });
+    expect(res).toEqual({ ok: false, error: OPENROUTER_CREDITS_MSG });
+  });
+});
+
+describe('response_format', () => {
+  it('при 400 про response_format повторяет запрос без него', async () => {
+    const formats: unknown[] = [];
+    const fetchFn: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      formats.push(body.response_format ?? null);
+      if (body.response_format) return new Response('{"error":{"message":"response_format json_object is not supported"}}', { status: 400 });
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"hr": 50, "spo2": 98}' } }] }), { status: 200 });
+    };
+    const res = await recognizeImage({
+      dataUrl: 'data:image/jpeg;base64,xxxx', device,
+      baseUrl: OPENROUTER_BASE_URL, model: OPENROUTER_DEFAULT_MODEL, apiKey: 'sk-test',
+      fetchFn,
+    });
+    expect(res.ok).toBe(true);
+    expect(formats).toEqual([{ type: 'json_object' }, null]);
   });
 });

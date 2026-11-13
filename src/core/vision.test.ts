@@ -126,6 +126,19 @@ describe('parseModelOutput', () => {
     expect(r.ok).toBe(true);
     expect(r.values.hr).toBe(90);
   });
+  it('ключи без учёта регистра, единицы и строки-числа', () => {
+    const r = parseModelOutput('{"HR": "142 bpm", "SpO2": "97%", "T2": "38,2 °C"}', monitorFields);
+    expect(r.ok).toBe(true);
+    expect(r.values.hr).toBe(142);
+    expect(r.values.spo2).toBe(97);
+    expect(r.values.t2).toBeCloseTo(38.2);
+  });
+  it('обёртка { data: {...} } и массив частей не мешают', () => {
+    const r = parseModelOutput('Sure:\n```\n{ "data": { "hr": 88, "spo2": 99 } }\n```', monitorFields);
+    expect(r.ok).toBe(true);
+    expect(r.values.hr).toBe(88);
+    expect(r.values.spo2).toBe(99);
+  });
 });
 
 describe('фото-фикстуры (мок ответа модели)', () => {

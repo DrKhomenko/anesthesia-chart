@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch, type DeviceRec, type LocalSettings, type VitalTick } from '../db/db';
 import { fmt, fmtTime, parseNum } from '../core/logic';
 import { emptyValues, resolveTickTime, type ParsedValue } from '../core/vision';
-import { downscaleImage, hasRecognitionReady, isCloudRequestFailure, makeThumbnail, MANUAL_OFFLINE_MSG, prepareCloudImage, recognitionProviderOf, recognizeImage, warpPhoto } from './visionClient';
+import { cloudNotReadyReason, downscaleImage, isCloudRequestFailure, makeThumbnail, prepareCloudImage, recognitionProviderOf, recognizeWithFallback, warpPhoto } from './visionClient';
 import { errorText } from './errorText';
 import { ScreenAlign } from './ScreenAlign';
 import type { Quad } from '../core/geom';
@@ -137,14 +137,15 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
       });
     };
     try {
-      const settings = loc ?? await getLocalSettings();
+      const settings = await getLocalSettings();
+      setLoc(settings);
       const provider = recognitionProviderOf(settings);
-      const ready = hasRecognitionReady(settings, navigator.onLine);
-      if (provider === 'cloud' && !ready) {
+      const notReady = provider === 'cloud' ? cloudNotReadyReason(settings) : null;
+      if (notReady) {
         const merge = mergeNow(null);
         setConfirm({
           type, device, values: empty,
-          at: merge.at.toISOString(), previewUrl, notice: MANUAL_OFFLINE_MSG,
+          at: merge.at.toISOString(), previewUrl, notice: notReady,
           mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
         });
         return;
@@ -164,9 +165,10 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
         return;
       }
       const cloudUrl = await prepareCloudImage(previewUrl);
-      const res = await recognizeImage({
+      const res = await recognizeWithFallback({
         dataUrl: cloudUrl, device,
         baseUrl: settings.recognitionBaseUrl, model: settings.recognitionModel, apiKey: settings.recognitionApiKey,
+        fallbackModels: settings.recognitionFallbackModels,
       });
       if (isCloudRequestFailure(res) && warpedPix) {
         try {
@@ -177,6 +179,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
           const localNote = flagged ? ' Часть полей не распознана или вне рамки — проверьте и при необходимости впишите вручную.' : '';
           setConfirm({
             type, device, values: local.values, at: merge.at.toISOString(), previewUrl,
+            sentImageUrl: cloudUrl, rawAnswer: res.raw ?? null, modelUsed: res.modelUsed ?? settings.recognitionModel,
             flags: local.flags as Record<string, OcrReason>,
             notice: `Облако недоступно (${res.error}). Показаны результаты распознавания на устройстве — проверьте их.${localNote}`,
             mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : (merge.usedDeviceTime ? 'Время взято с часов прибора.' : null),
@@ -190,7 +193,8 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
       const merge = mergeNow(res.reading.deviceTimeRaw);
       setConfirm({
         type, device, values: res.reading.values, at: merge.at.toISOString(), previewUrl,
-        notice: res.ok ? null : `${res.error}. Проверьте и введите вручную.`,
+        sentImageUrl: cloudUrl, rawAnswer: res.raw ?? null, modelUsed: res.modelUsed ?? settings.recognitionModel,
+        notice: res.ok ? (res.modelUsed && res.modelUsed !== settings.recognitionModel ? `Распознала запасная модель ${res.modelUsed}.` : null) : `${res.error}. Проверьте и введите вручную.`,
         mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : (merge.usedDeviceTime ? 'Время взято с часов прибора.' : null),
       });
     } catch (e) {
