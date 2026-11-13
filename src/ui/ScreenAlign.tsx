@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as PE } from 'react';
 import { defaultQuad, detectScreenQuad, sanitizeQuad, type Point, type Pix, type Quad } from '../core/geom';
+import { releaseCanvas } from './errorText';
 
 function imageToPix(img: HTMLImageElement): Pix {
   const c = document.createElement('canvas');
@@ -10,7 +11,10 @@ function imageToPix(img: HTMLImageElement): Pix {
   const ctx = c.getContext('2d');
   if (!ctx) throw new Error('Нет canvas');
   ctx.drawImage(img, 0, 0, c.width, c.height);
-  return ctx.getImageData(0, 0, c.width, c.height);
+  const pix = ctx.getImageData(0, 0, c.width, c.height);
+  const copy: Pix = { data: new Uint8ClampedArray(pix.data), width: c.width, height: c.height };
+  releaseCanvas(c);
+  return copy;
 }
 
 const LABELS: { key: keyof Quad; ru: string }[] = [

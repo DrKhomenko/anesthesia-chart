@@ -4,6 +4,7 @@ import { db, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch
 import { fmt, fmtTime, parseNum } from '../core/logic';
 import { emptyValues, resolveTickTime, type ParsedValue } from '../core/vision';
 import { downscaleImage, hasRecognitionReady, makeThumbnail, MANUAL_OFFLINE_MSG, recognitionProviderOf, recognizeImage, warpPhoto } from './visionClient';
+import { errorText } from './errorText';
 import { ScreenAlign } from './ScreenAlign';
 import type { Quad } from '../core/geom';
 import type { OcrReason } from '../core/ocr';
@@ -95,7 +96,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
       previewRef.current = dataUrl;
       setAlign({ type, device, dataUrl });
     } catch (e) {
-      setBanner(e instanceof Error ? e.message : 'Не удалось обработать снимок');
+      setBanner(`открытие снимка: ${errorText(e)}`);
     }
   };
 
@@ -104,30 +105,58 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     const { type, device, dataUrl } = align;
     setAlign(null);
     setBusy(type);
+    setBanner(null);
+    const empty = emptyValues(fieldsFor(device.type, device.fieldKeys));
+    const mergeNow = (deviceTimeRaw: string | null) =>
+      resolveTickTime({ deviceTimeRaw, now: new Date(), existingTicks: ticks });
+    let previewUrl = dataUrl;
+    let warpedPix: import('../core/geom').Pix | null = null;
     try {
       const warped = await warpPhoto(dataUrl, quad);
       previewRef.current = warped.dataUrl;
+      previewUrl = warped.dataUrl;
+      warpedPix = warped.pix;
+    } catch (e) {
+      const reason = errorText(e);
+      const tagged = reason.startsWith('выравнивание:') ? reason : `выравнивание: ${reason}`;
+      const merge = mergeNow(null);
+      setConfirm({
+        type, device, values: empty, at: merge.at.toISOString(), previewUrl: dataUrl,
+        notice: `Распознать не удалось (${tagged}) — введите вручную`,
+        mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
+      });
+      setBusy(null);
+      return;
+    }
+    const openEmpty = (reason: string) => {
+      const merge = mergeNow(null);
+      setConfirm({
+        type, device, values: empty, at: merge.at.toISOString(), previewUrl,
+        notice: `Распознать не удалось (${reason}) — введите вручную`,
+        mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
+      });
+    };
+    try {
       const settings = loc ?? await getLocalSettings();
       const provider = recognitionProviderOf(settings);
       const ready = hasRecognitionReady(settings, navigator.onLine);
       if (provider === 'cloud' && !ready) {
-        const now = new Date();
-        const merge = resolveTickTime({ deviceTimeRaw: null, now, existingTicks: ticks });
+        const merge = mergeNow(null);
         setConfirm({
-          type, device, values: emptyValues(fieldsFor(device.type, device.fieldKeys)),
-          at: merge.at.toISOString(), previewUrl: warped.dataUrl, notice: MANUAL_OFFLINE_MSG,
+          type, device, values: empty,
+          at: merge.at.toISOString(), previewUrl, notice: MANUAL_OFFLINE_MSG,
           mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
         });
         return;
       }
       if (provider === 'on-device') {
+        if (!warpedPix) { openEmpty('выравнивание: нет кадра'); return; }
         const { recognizeOnDevice } = await import('./onDeviceOcr');
-        const res = await recognizeOnDevice({ screen: warped.pix, device });
-        const now = new Date();
-        const merge = resolveTickTime({ deviceTimeRaw: res.deviceTimeRaw, now, existingTicks: ticks });
+        const res = await recognizeOnDevice({ screen: warpedPix, device });
+        const merge = mergeNow(res.deviceTimeRaw);
         const flagged = Object.keys(res.flags).length;
         setConfirm({
-          type, device, values: res.values, at: merge.at.toISOString(), previewUrl: warped.dataUrl,
+          type, device, values: res.values, at: merge.at.toISOString(), previewUrl,
           flags: res.flags as Record<string, OcrReason>,
           notice: flagged ? 'Часть полей не распознана или вне рамки — проверьте и при необходимости впишите вручную.' : null,
           mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : (merge.usedDeviceTime ? 'Время взято с часов прибора.' : null),
@@ -135,18 +164,17 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
         return;
       }
       const res = await recognizeImage({
-        dataUrl: warped.dataUrl, device,
+        dataUrl: previewUrl, device,
         baseUrl: settings.recognitionBaseUrl, model: settings.recognitionModel, apiKey: settings.recognitionApiKey,
       });
-      const now = new Date();
-      const merge = resolveTickTime({ deviceTimeRaw: res.reading.deviceTimeRaw, now, existingTicks: ticks });
+      const merge = mergeNow(res.reading.deviceTimeRaw);
       setConfirm({
-        type, device, values: res.reading.values, at: merge.at.toISOString(), previewUrl: warped.dataUrl,
+        type, device, values: res.reading.values, at: merge.at.toISOString(), previewUrl,
         notice: res.ok ? null : `${res.error}. Проверьте и введите вручную.`,
         mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : (merge.usedDeviceTime ? 'Время взято с часов прибора.' : null),
       });
     } catch (e) {
-      setBanner(e instanceof Error ? e.message : 'Не удалось обработать снимок');
+      openEmpty(errorText(e));
     } finally {
       setBusy(null);
     }

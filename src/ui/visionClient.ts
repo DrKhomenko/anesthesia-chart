@@ -2,6 +2,7 @@ import type { DeviceRec, RecognitionProvider } from '../db/db';
 import { fieldsFor } from '../core/devices';
 import { buildVisionPrompt, emptyValues, parseModelOutput, type ParsedReading } from '../core/vision';
 import { normalizedQuadToPixels, outputSizeForQuad, warpPerspective, type Pix, type Quad } from '../core/geom';
+import { releaseCanvas, stepError } from './errorText';
 
 export const MAX_IMAGE_SIDE = 1600;
 
@@ -23,31 +24,51 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   });
 }
 
-export async function pixFromDataUrl(dataUrl: string): Promise<Pix> {
+export async function pixFromDataUrl(dataUrl: string, maxSide = MAX_IMAGE_SIDE): Promise<Pix> {
   const img = await loadImage(dataUrl);
   const c = document.createElement('canvas');
-  c.width = img.naturalWidth; c.height = img.naturalHeight;
-  const ctx = c.getContext('2d');
-  if (!ctx) throw new Error('Нет canvas');
-  ctx.drawImage(img, 0, 0);
-  return ctx.getImageData(0, 0, c.width, c.height);
+  try {
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const width = Math.max(1, Math.round(img.naturalWidth * scale));
+    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    c.width = width; c.height = height;
+    const ctx = c.getContext('2d');
+    if (!ctx) throw new Error('Нет canvas');
+    ctx.drawImage(img, 0, 0, width, height);
+    const imgData = ctx.getImageData(0, 0, width, height);
+    // Копия буфера, чтобы можно было сразу освободить canvas на iOS.
+    return { data: new Uint8ClampedArray(imgData.data), width, height };
+  } finally {
+    releaseCanvas(c);
+    img.src = '';
+  }
 }
 
 export function dataUrlFromPix(pix: Pix, type = 'image/jpeg', quality = 0.92): string {
   const c = document.createElement('canvas');
-  c.width = pix.width; c.height = pix.height;
-  const ctx = c.getContext('2d');
-  if (!ctx) throw new Error('Нет canvas');
-  ctx.putImageData(new ImageData(new Uint8ClampedArray(pix.data), pix.width, pix.height), 0, 0);
-  return c.toDataURL(type, quality);
+  try {
+    c.width = pix.width; c.height = pix.height;
+    const ctx = c.getContext('2d');
+    if (!ctx) throw new Error('Нет canvas');
+    const img = ctx.createImageData(pix.width, pix.height);
+    img.data.set(pix.data);
+    ctx.putImageData(img, 0, 0);
+    return c.toDataURL(type, quality);
+  } finally {
+    releaseCanvas(c);
+  }
 }
 
 export async function warpPhoto(dataUrl: string, quadNorm: Quad): Promise<{ pix: Pix; dataUrl: string }> {
-  const src = await pixFromDataUrl(dataUrl);
-  const quadPx = normalizedQuadToPixels(quadNorm, src.width, src.height);
-  const size = outputSizeForQuad(quadPx);
-  const pix = warpPerspective(src, quadPx, size.width, size.height);
-  return { pix, dataUrl: dataUrlFromPix(pix) };
+  try {
+    const src = await pixFromDataUrl(dataUrl);
+    const quadPx = normalizedQuadToPixels(quadNorm, src.width, src.height);
+    const size = outputSizeForQuad(quadPx);
+    const pix = warpPerspective(src, quadPx, size.width, size.height);
+    return { pix, dataUrl: dataUrlFromPix(pix) };
+  } catch (e) {
+    throw stepError('выравнивание', e);
+  }
 }
 
 export function chatCompletionsUrl(baseUrl: string): string {
@@ -64,12 +85,16 @@ export async function downscaleImage(file: Blob, maxSide = MAX_IMAGE_SIDE, quali
     const width = Math.max(1, Math.round(bmp.width * scale));
     const height = Math.max(1, Math.round(bmp.height * scale));
     const canvas = document.createElement('canvas');
-    canvas.width = width; canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Нет canvas');
-    ctx.drawImage(bmp, 0, 0, width, height);
-    const dataUrl = canvas.toDataURL('image/jpeg', quality);
-    return { dataUrl, width, height };
+    try {
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Нет canvas');
+      ctx.drawImage(bmp, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      return { dataUrl, width, height };
+    } finally {
+      releaseCanvas(canvas);
+    }
   } finally {
     bmp.close();
   }

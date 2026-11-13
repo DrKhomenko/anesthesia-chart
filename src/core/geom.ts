@@ -101,8 +101,17 @@ export function warpPerspective(src: Pix, quad: Quad, outW: number, outH: number
 
 /** Шаблоны полей калиброваны на кадре 4:3 — всегда выравниваем к этому формату. */
 export const SCREEN_ASPECT = 4 / 3;
-export function outputSizeForQuad(_quadPx?: Quad, targetW = 1200): { width: number; height: number } {
-  return { width: targetW, height: Math.round(targetW / SCREEN_ASPECT) };
+export const MAX_WARP_SIDE = 1400;
+export function outputSizeForQuad(_quadPx?: Quad, targetW = 1200, maxSide = MAX_WARP_SIDE): { width: number; height: number } {
+  let width = targetW;
+  let height = Math.round(targetW / SCREEN_ASPECT);
+  const long = Math.max(width, height);
+  if (long > maxSide) {
+    const s = maxSide / long;
+    width = Math.max(1, Math.round(width * s));
+    height = Math.max(1, Math.round(height * s));
+  }
+  return { width, height };
 }
 
 export function cropRegion(src: Pix, r: FieldRegion, padFrac = 0.04): Pix {

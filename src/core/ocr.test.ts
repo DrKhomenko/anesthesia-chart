@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MONITOR_FIELDS, MACHINE_FIELDS, UMEC12_REGIONS, WATO35_REGIONS } from './devices';
 import { acceptNibp, acceptOcrValue, bestNumberInText, recognizeFields, MIN_OCR_CONFIDENCE } from './ocr';
-import { applyHomography, defaultQuad, detectScreenQuad, findHomography, hasInk, preprocessCrop, type Pix } from './geom';
+import { applyHomography, defaultQuad, detectScreenQuad, findHomography, hasInk, outputSizeForQuad, preprocessCrop, MAX_WARP_SIDE, type Pix } from './geom';
 
 function solid(w: number, h: number, rgb: [number, number, number]): Pix {
   const data = new Uint8ClampedArray(w * h * 4);
@@ -173,3 +173,17 @@ describe('geom: гомография и детектор экрана', () => {
     expect(q.br.x).toBeLessThan(1);
   });
 });
+
+describe('outputSizeForQuad', () => {
+  it('по умолчанию 1200×900, длинная сторона не больше 1400', () => {
+    const s = outputSizeForQuad();
+    expect(s).toEqual({ width: 1200, height: 900 });
+    expect(Math.max(s.width, s.height)).toBeLessThanOrEqual(MAX_WARP_SIDE);
+  });
+  it('уменьшает кадр, если цель больше потолка', () => {
+    const s = outputSizeForQuad(undefined, 4000, 1400);
+    expect(Math.max(s.width, s.height)).toBe(1400);
+    expect(s.height / s.width).toBeCloseTo(3 / 4, 2);
+  });
+});
+
