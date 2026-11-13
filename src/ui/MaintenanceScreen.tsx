@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch, type DeviceRec, type LocalSettings, type VitalTick } from '../db/db';
 import { fmt, fmtTime, parseNum } from '../core/logic';
 import { emptyValues, resolveTickTime, type ParsedValue } from '../core/vision';
-import { downscaleImage, hasRecognitionReady, makeThumbnail, MANUAL_OFFLINE_MSG, recognitionProviderOf, recognizeImage, warpPhoto } from './visionClient';
+import { downscaleImage, hasRecognitionReady, isCloudRequestFailure, makeThumbnail, MANUAL_OFFLINE_MSG, prepareCloudImage, recognitionProviderOf, recognizeImage, warpPhoto } from './visionClient';
 import { errorText } from './errorText';
 import { ScreenAlign } from './ScreenAlign';
 import type { Quad } from '../core/geom';
@@ -163,10 +163,30 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
         });
         return;
       }
+      const cloudUrl = await prepareCloudImage(previewUrl);
       const res = await recognizeImage({
-        dataUrl: previewUrl, device,
+        dataUrl: cloudUrl, device,
         baseUrl: settings.recognitionBaseUrl, model: settings.recognitionModel, apiKey: settings.recognitionApiKey,
       });
+      if (isCloudRequestFailure(res) && warpedPix) {
+        try {
+          const { recognizeOnDevice } = await import('./onDeviceOcr');
+          const local = await recognizeOnDevice({ screen: warpedPix, device });
+          const merge = mergeNow(local.deviceTimeRaw);
+          const flagged = Object.keys(local.flags).length;
+          const localNote = flagged ? ' Часть полей не распознана или вне рамки — проверьте и при необходимости впишите вручную.' : '';
+          setConfirm({
+            type, device, values: local.values, at: merge.at.toISOString(), previewUrl,
+            flags: local.flags as Record<string, OcrReason>,
+            notice: `Облако недоступно (${res.error}). Показаны результаты распознавания на устройстве — проверьте их.${localNote}`,
+            mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : (merge.usedDeviceTime ? 'Время взято с часов прибора.' : null),
+          });
+          return;
+        } catch (localErr) {
+          openEmpty(`${res.error}; на устройстве: ${errorText(localErr)}`);
+          return;
+        }
+      }
       const merge = mergeNow(res.reading.deviceTimeRaw);
       setConfirm({
         type, device, values: res.reading.values, at: merge.at.toISOString(), previewUrl,
