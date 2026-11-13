@@ -11,12 +11,16 @@ describe('chatCompletionsUrl', () => {
 });
 
 describe('hasRecognitionReady', () => {
-  const ok = { recognitionBaseUrl: 'https://x/v1', recognitionModel: 'm', recognitionApiKey: 'k' };
-  it('нужны сеть, адрес, модель и ключ', () => {
-    expect(hasRecognitionReady(ok, true)).toBe(true);
-    expect(hasRecognitionReady(ok, false)).toBe(false);
-    expect(hasRecognitionReady({ ...ok, recognitionApiKey: '' }, true)).toBe(false);
-    expect(hasRecognitionReady({ ...ok, recognitionBaseUrl: '  ' }, true)).toBe(false);
-    expect(hasRecognitionReady({ ...ok, recognitionModel: '' }, true)).toBe(false);
+  const cloud = { recognitionProvider: 'cloud' as const, recognitionBaseUrl: 'https://x/v1', recognitionModel: 'm', recognitionApiKey: 'k' };
+  it('на устройстве готово и без сети, и без ключа', () => {
+    expect(hasRecognitionReady({ recognitionProvider: 'on-device', recognitionBaseUrl: '', recognitionModel: '', recognitionApiKey: '' }, false)).toBe(true);
+    expect(hasRecognitionReady({ recognitionBaseUrl: '', recognitionModel: '', recognitionApiKey: '' }, false)).toBe(true);
+  });
+  it('облако: нужны сеть, адрес, модель и ключ', () => {
+    expect(hasRecognitionReady(cloud, true)).toBe(true);
+    expect(hasRecognitionReady(cloud, false)).toBe(false);
+    expect(hasRecognitionReady({ ...cloud, recognitionApiKey: '' }, true)).toBe(false);
+    expect(hasRecognitionReady({ ...cloud, recognitionBaseUrl: '  ' }, true)).toBe(false);
+    expect(hasRecognitionReady({ ...cloud, recognitionModel: '' }, true)).toBe(false);
   });
 });

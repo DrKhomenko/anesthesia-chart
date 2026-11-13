@@ -140,6 +140,12 @@ button.chip{cursor:pointer}.chip.add{background:transparent;border:1px dashed #4
 .bbox.on{border-color:var(--blue);background:rgba(10,132,255,.2)}
 .bbox span{position:absolute;left:0;top:0;transform:translateY(-100%);background:var(--cyan);color:#000;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px 4px 0 0;white-space:nowrap}
 .bbox.on span{background:var(--blue);color:#fff}
+.align-wrap{position:relative;width:100%;background:#000;border-radius:12px;overflow:hidden;touch-action:none;user-select:none;line-height:0}
+.align-wrap img{display:block;width:100%;height:auto;max-height:min(62vh,720px);pointer-events:none}
+.align-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.align-svg polygon{fill:rgba(255,214,10,.14);stroke:#ffd60a;stroke-width:0.7}
+.align-h{position:absolute;width:28px;height:28px;margin-left:-14px;margin-top:-14px;border-radius:50%;background:#ffd60a;border:3px solid #111;box-shadow:0 0 0 12px rgba(255,214,10,.2);z-index:2;touch-action:none;cursor:grab;padding:0;min-height:0}
+.align-h:active{cursor:grabbing;background:#fff}
 .vtable-wrap{overflow:auto;-webkit-overflow-scrolling:touch}
 table.vtable{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 table.vtable th{font-size:11px;color:var(--mut);font-weight:600;text-align:left;padding:0 10px 8px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
@@ -227,6 +233,8 @@ table.vtable tbody tr.on td:last-child{border-radius:0 10px 10px 0}
   .cv{grid-template-columns:1fr 1fr}
   .cv .field input,.cv .field select{font-size:28px}
   .shtitle .ttl{font-size:18px;min-width:0}
+  .align-wrap img{max-height:min(48vh,480px)}
+  .align-h{width:32px;height:32px;margin-left:-16px;margin-top:-16px;box-shadow:0 0 0 14px rgba(255,214,10,.22)}
   .card{overflow-x:auto}
   .devcard{flex-wrap:wrap}
   .devmain{flex:1 1 140px}

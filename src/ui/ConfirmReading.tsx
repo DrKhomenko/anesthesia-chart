@@ -3,6 +3,7 @@ import type { DeviceRec } from '../db/db';
 import { fieldsFor, type DeviceType } from '../core/devices';
 import { fmt, parseNum } from '../core/logic';
 import { isOutOfRange, type ParsedValue } from '../core/vision';
+import { FLAG_HINT, type OcrReason } from '../core/ocr';
 import { TimePicker } from './pickers';
 
 export interface ConfirmState {
@@ -13,6 +14,7 @@ export interface ConfirmState {
   previewUrl?: string | null;
   notice?: string | null;
   mergeNote?: string | null;
+  flags?: Record<string, OcrReason>;
 }
 
 function toInput(v: ParsedValue): string {
@@ -60,8 +62,10 @@ export function ConfirmReading({ state, onCancel, onConfirm }: {
           const n = f.kind === 'number' ? parseNum(raw) : NaN;
           const parsed: ParsedValue = f.kind === 'number' ? (raw.trim() === '' ? null : Number.isFinite(n) ? n : raw) : (raw.trim() || null);
           const badNum = f.kind === 'number' && raw.trim() !== '' && !Number.isFinite(n);
-          const oor = !badNum && isOutOfRange(f, parsed);
-          return <label key={f.key} className={`field ${oor || badNum ? 'warnb' : ''}`}>
+          const flag = state.flags?.[f.key];
+          const oor = !badNum && (isOutOfRange(f, parsed) || flag === 'out-of-range');
+          const flagged = !!flag && flag !== 'ok';
+          return <label key={f.key} className={`field ${oor || badNum || flagged ? 'warnb' : ''}`}>
             <span className="fl">{f.label}{f.unit ? ` · ${f.unit}` : ''}</span>
             {f.kind === 'enum' && f.enumValues
               ? <select value={raw} onChange={e => set(f.key, e.target.value)}>
@@ -72,6 +76,7 @@ export function ConfirmReading({ state, onCancel, onConfirm }: {
                   onChange={e => set(f.key, e.target.value)} />}
             {oor && <span className="lh w">вне рамки {f.min ?? '…'}–{f.max ?? '…'}</span>}
             {badNum && <span className="lh e">не число</span>}
+            {!oor && !badNum && flagged && <span className="lh w">{FLAG_HINT[flag!] || 'проверьте'}</span>}
           </label>;
         })}
       </div>

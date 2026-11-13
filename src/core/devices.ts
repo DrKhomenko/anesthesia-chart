@@ -69,14 +69,48 @@ export interface DevicePreset {
   isPreset: true;
 }
 
+/** Рамки полей относительно выровненного экрана (0–1), калибровка по фото клиники. */
+export const UMEC12_REGIONS: Record<string, FieldRegion> = {
+  _deviceTime: { x: 0.33, y: 0.025, w: 0.22, h: 0.07 },
+  hr: { x: 0.76, y: 0.14, w: 0.18, h: 0.18 },
+  spo2: { x: 0.755, y: 0.44, w: 0.11, h: 0.10 },
+  pr: { x: 0.89, y: 0.44, w: 0.10, h: 0.10 },
+  etco2: { x: 0.75, y: 0.63, w: 0.12, h: 0.12 },
+  rr: { x: 0.90, y: 0.61, w: 0.09, h: 0.10 },
+  fico2: { x: 0.90, y: 0.71, w: 0.09, h: 0.09 },
+  t1: { x: 0.13, y: 0.83, w: 0.15, h: 0.07 },
+  t2: { x: 0.13, y: 0.925, w: 0.12, h: 0.07 },
+  nibp: { x: 0.75, y: 0.855, w: 0.18, h: 0.07 },
+};
+
+export const WATO35_REGIONS: Record<string, FieldRegion> = {
+  _deviceTime: { x: 0.82, y: 0.08, w: 0.14, h: 0.08 },
+  ventMode: { x: 0.245, y: 0.045, w: 0.09, h: 0.08 },
+  setPinsp: { x: 0.04, y: 0.93, w: 0.08, h: 0.07 },
+  setRr: { x: 0.135, y: 0.93, w: 0.08, h: 0.07 },
+  setIE: { x: 0.23, y: 0.93, w: 0.08, h: 0.07 },
+  setTslope: { x: 0.325, y: 0.93, w: 0.07, h: 0.07 },
+  setPeep: { x: 0.415, y: 0.93, w: 0.07, h: 0.07 },
+  pPeak: { x: 0.83, y: 0.22, w: 0.11, h: 0.10 },
+  pPlat: { x: 0.83, y: 0.335, w: 0.11, h: 0.08 },
+  peep: { x: 0.83, y: 0.435, w: 0.11, h: 0.08 },
+  vtExp: { x: 0.83, y: 0.525, w: 0.10, h: 0.065 },
+  mv: { x: 0.83, y: 0.595, w: 0.10, h: 0.06 },
+  rrMeas: { x: 0.83, y: 0.66, w: 0.10, h: 0.06 },
+  fio2: { x: 0.81, y: 0.74, w: 0.13, h: 0.10 },
+  vtInsp: { x: 0.15, y: 0.555, w: 0.085, h: 0.07 },
+  raw: { x: 0.34, y: 0.56, w: 0.06, h: 0.07 },
+  compliance: { x: 0.34, y: 0.625, w: 0.06, h: 0.07 },
+};
+
 export const PRESET_DEVICES: DevicePreset[] = [
   {
     id: PRESET_UMEC12_ID, type: 'monitor', name: 'Mindray uMEC12 Vet', isPreset: true,
-    fieldKeys: MONITOR_FIELDS.map(f => f.key), regions: {},
+    fieldKeys: MONITOR_FIELDS.map(f => f.key), regions: { ...UMEC12_REGIONS },
   },
   {
     id: PRESET_WATO_ID, type: 'machine', name: 'Mindray WATO EX-35Vet', isPreset: true,
-    fieldKeys: MACHINE_FIELDS.map(f => f.key), regions: {},
+    fieldKeys: MACHINE_FIELDS.map(f => f.key), regions: { ...WATO35_REGIONS },
   },
 ];
 

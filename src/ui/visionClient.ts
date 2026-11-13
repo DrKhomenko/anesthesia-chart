@@ -1,11 +1,53 @@
-import type { DeviceRec } from '../db/db';
+import type { DeviceRec, RecognitionProvider } from '../db/db';
 import { fieldsFor } from '../core/devices';
 import { buildVisionPrompt, emptyValues, parseModelOutput, type ParsedReading } from '../core/vision';
+import { normalizedQuadToPixels, outputSizeForQuad, warpPerspective, type Pix, type Quad } from '../core/geom';
 
 export const MAX_IMAGE_SIDE = 1600;
 
-export function hasRecognitionReady(s: { recognitionBaseUrl: string; recognitionModel: string; recognitionApiKey: string }, online: boolean): boolean {
+export function recognitionProviderOf(s: { recognitionProvider?: string }): RecognitionProvider {
+  return s.recognitionProvider === 'cloud' ? 'cloud' : 'on-device';
+}
+
+export function hasRecognitionReady(s: { recognitionProvider?: string; recognitionBaseUrl: string; recognitionModel: string; recognitionApiKey: string }, online: boolean): boolean {
+  if (recognitionProviderOf(s) === 'on-device') return true;
   return online && !!s.recognitionApiKey.trim() && !!s.recognitionBaseUrl.trim() && !!s.recognitionModel.trim();
+}
+
+function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Не удалось открыть снимок'));
+    img.src = dataUrl;
+  });
+}
+
+export async function pixFromDataUrl(dataUrl: string): Promise<Pix> {
+  const img = await loadImage(dataUrl);
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const ctx = c.getContext('2d');
+  if (!ctx) throw new Error('Нет canvas');
+  ctx.drawImage(img, 0, 0);
+  return ctx.getImageData(0, 0, c.width, c.height);
+}
+
+export function dataUrlFromPix(pix: Pix, type = 'image/jpeg', quality = 0.92): string {
+  const c = document.createElement('canvas');
+  c.width = pix.width; c.height = pix.height;
+  const ctx = c.getContext('2d');
+  if (!ctx) throw new Error('Нет canvas');
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(pix.data), pix.width, pix.height), 0, 0);
+  return c.toDataURL(type, quality);
+}
+
+export async function warpPhoto(dataUrl: string, quadNorm: Quad): Promise<{ pix: Pix; dataUrl: string }> {
+  const src = await pixFromDataUrl(dataUrl);
+  const quadPx = normalizedQuadToPixels(quadNorm, src.width, src.height);
+  const size = outputSizeForQuad(quadPx);
+  const pix = warpPerspective(src, quadPx, size.width, size.height);
+  return { pix, dataUrl: dataUrlFromPix(pix) };
 }
 
 export function chatCompletionsUrl(baseUrl: string): string {

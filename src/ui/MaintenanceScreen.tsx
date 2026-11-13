@@ -3,7 +3,10 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch, type DeviceRec, type LocalSettings, type VitalTick } from '../db/db';
 import { fmt, fmtTime, parseNum } from '../core/logic';
 import { emptyValues, resolveTickTime, type ParsedValue } from '../core/vision';
-import { downscaleImage, hasRecognitionReady, makeThumbnail, MANUAL_OFFLINE_MSG, recognizeImage } from './visionClient';
+import { downscaleImage, hasRecognitionReady, makeThumbnail, MANUAL_OFFLINE_MSG, recognitionProviderOf, recognizeImage, warpPhoto } from './visionClient';
+import { ScreenAlign } from './ScreenAlign';
+import type { Quad } from '../core/geom';
+import type { OcrReason } from '../core/ocr';
 import { ConfirmReading, type ConfirmState } from './ConfirmReading';
 import { Field, TimePicker } from './pickers';
 import { useCaseDraft } from './useCase';
@@ -39,6 +42,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
   const [selId, setSelId] = useState<string | null>(null);
   const [busy, setBusy] = useState<'monitor' | 'machine' | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [align, setAlign] = useState<{ type: DeviceType; device: DeviceRec; dataUrl: string; initialQuad?: import('../core/geom').Quad } | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const previewRef = useRef<string | null>(null);
   const fileMon = useRef<HTMLInputElement>(null);
@@ -50,6 +54,12 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     if (!raw) return;
     sessionStorage.removeItem('demoConfirm');
     try { setConfirm(JSON.parse(raw) as ConfirmState); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    const raw = sessionStorage.getItem('demoAlign');
+    if (!raw) return;
+    sessionStorage.removeItem('demoAlign');
+    try { setAlign(JSON.parse(raw)); } catch { /* ignore */ }
   }, []);
   useEffect(() => {
     if (!selId && ticks.length) setSelId(ticks[ticks.length - 1].id);
@@ -79,31 +89,59 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     const device = pickDevice(type);
     if (!device) { setBanner('Сначала выберите прибор в Настройках → Оборудование'); return; }
     if (!file) return;
-    setBanner(null); setBusy(type);
+    setBanner(null);
     try {
       const { dataUrl } = await downscaleImage(file);
       previewRef.current = dataUrl;
+      setAlign({ type, device, dataUrl });
+    } catch (e) {
+      setBanner(e instanceof Error ? e.message : 'Не удалось обработать снимок');
+    }
+  };
+
+  const afterAlign = async (quad: Quad) => {
+    if (!align) return;
+    const { type, device, dataUrl } = align;
+    setAlign(null);
+    setBusy(type);
+    try {
+      const warped = await warpPhoto(dataUrl, quad);
+      previewRef.current = warped.dataUrl;
       const settings = loc ?? await getLocalSettings();
-      const online = navigator.onLine;
-      const ready = hasRecognitionReady(settings, online);
-      if (!ready) {
+      const provider = recognitionProviderOf(settings);
+      const ready = hasRecognitionReady(settings, navigator.onLine);
+      if (provider === 'cloud' && !ready) {
         const now = new Date();
         const merge = resolveTickTime({ deviceTimeRaw: null, now, existingTicks: ticks });
         setConfirm({
           type, device, values: emptyValues(fieldsFor(device.type, device.fieldKeys)),
-          at: merge.at.toISOString(), previewUrl: dataUrl, notice: MANUAL_OFFLINE_MSG,
+          at: merge.at.toISOString(), previewUrl: warped.dataUrl, notice: MANUAL_OFFLINE_MSG,
           mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
         });
         return;
       }
+      if (provider === 'on-device') {
+        const { recognizeOnDevice } = await import('./onDeviceOcr');
+        const res = await recognizeOnDevice({ screen: warped.pix, device });
+        const now = new Date();
+        const merge = resolveTickTime({ deviceTimeRaw: res.deviceTimeRaw, now, existingTicks: ticks });
+        const flagged = Object.keys(res.flags).length;
+        setConfirm({
+          type, device, values: res.values, at: merge.at.toISOString(), previewUrl: warped.dataUrl,
+          flags: res.flags as Record<string, OcrReason>,
+          notice: flagged ? 'Часть полей не распознана или вне рамки — проверьте и при необходимости впишите вручную.' : null,
+          mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : (merge.usedDeviceTime ? 'Время взято с часов прибора.' : null),
+        });
+        return;
+      }
       const res = await recognizeImage({
-        dataUrl, device,
+        dataUrl: warped.dataUrl, device,
         baseUrl: settings.recognitionBaseUrl, model: settings.recognitionModel, apiKey: settings.recognitionApiKey,
       });
       const now = new Date();
       const merge = resolveTickTime({ deviceTimeRaw: res.reading.deviceTimeRaw, now, existingTicks: ticks });
       setConfirm({
-        type, device, values: res.reading.values, at: merge.at.toISOString(), previewUrl: dataUrl,
+        type, device, values: res.reading.values, at: merge.at.toISOString(), previewUrl: warped.dataUrl,
         notice: res.ok ? null : `${res.error}. Проверьте и введите вручную.`,
         mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : (merge.usedDeviceTime ? 'Время взято с часов прибора.' : null),
       });
@@ -212,6 +250,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; void onFile('monitor', f); }} />
   <input ref={fileNda} type="file" accept="image/*" capture="environment" hidden
     onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; void onFile('machine', f); }} />
+  {align && <ScreenAlign src={align.dataUrl} initialQuad={align.initialQuad} onCancel={() => setAlign(null)} onConfirm={q => void afterAlign(q)} />}
   {confirm && <ConfirmReading state={confirm} onCancel={() => setConfirm(null)} onConfirm={(v, at) => void confirmSave(v, at)} />}
   </>;
 }

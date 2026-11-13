@@ -71,7 +71,9 @@ describe('db', () => {
     expect(loc.id).toBe(LOCAL_SETTINGS_ID);
     expect(loc.storePhotoThumbnail).toBe(false);
     expect(loc.recognitionApiKey).toBe('');
+    expect(loc.recognitionProvider).toBe('on-device');
     expect(loc.activeMonitorId).toBe(PRESET_UMEC12_ID);
+    expect(devs.every(x => Object.keys(x.regions).length > 0)).toBe(true);
   });
   it('два частичных снимка сливаются в одну минуту карты', async () => {
     const d = new ChartDB('t8'); await seed(d);

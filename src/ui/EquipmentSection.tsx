@@ -19,8 +19,8 @@ export function EquipmentSection({ onSaved }: { onSaved: (fn: () => Promise<unkn
       const prev = await db.devices.get(p.id);
       if (!prev) {
         await saveWithAudit(db.devices, 'Device', { ...meta(), id: p.id, type: p.type, name: p.name, fieldKeys: [...p.fieldKeys], regions: { ...p.regions }, isPreset: true, isUserAdded: false, isActive: true });
-      } else if (prev.deletedAt || !prev.isActive) {
-        await saveWithAudit(db.devices, 'Device', { ...prev, deletedAt: null, isActive: true });
+      } else {
+        await saveWithAudit(db.devices, 'Device', { ...prev, deletedAt: null, isActive: true, name: p.name, fieldKeys: [...p.fieldKeys], regions: { ...p.regions } });
       }
     }
   });

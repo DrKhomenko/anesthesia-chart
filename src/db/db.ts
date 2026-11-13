@@ -53,8 +53,10 @@ export interface DeviceRec extends Syncable {
   isPreset: boolean; isUserAdded: boolean; isActive: boolean;
 }
 export const LOCAL_SETTINGS_ID = 'local';
+export type RecognitionProvider = 'on-device' | 'cloud';
 export interface LocalSettings {
   id: string;
+  recognitionProvider: RecognitionProvider;
   recognitionBaseUrl: string;
   recognitionModel: string;
   recognitionApiKey: string;
@@ -64,7 +66,8 @@ export interface LocalSettings {
 }
 export function defaultLocalSettings(): LocalSettings {
   return {
-    id: LOCAL_SETTINGS_ID, recognitionBaseUrl: '', recognitionModel: '', recognitionApiKey: '',
+    id: LOCAL_SETTINGS_ID, recognitionProvider: 'on-device',
+    recognitionBaseUrl: '', recognitionModel: '', recognitionApiKey: '',
     storePhotoThumbnail: false, activeMonitorId: PRESET_UMEC12_ID, activeMachineId: PRESET_WATO_ID,
   };
 }
@@ -199,6 +202,7 @@ export async function seed(database: ChartDB = db) {
   if (!(await database.clinicSettings.get(CLINIC_SETTINGS_ID)))
     await database.clinicSettings.add({ ...meta(), id: CLINIC_SETTINGS_ID, examLabLimitsApprovedBy: '', examLabLimitsApprovedAt: null });
   await seedDevices(database);
+  await ensurePresetRegions(database);
   if (!(await database.localSettings.get(LOCAL_SETTINGS_ID)))
     await database.localSettings.add(defaultLocalSettings());
 }
@@ -212,6 +216,16 @@ export async function seedDevices(database: ChartDB = db) {
       regions: { ...p.regions }, isPreset: true, isUserAdded: false, isActive: true,
     };
     await database.devices.add(rec);
+  }
+}
+
+/** Если у шаблона ещё нет рамок полей (старые установки) — заполняем, не затирая правки. */
+export async function ensurePresetRegions(database: ChartDB = db) {
+  for (const p of PRESET_DEVICES) {
+    const prev = await database.devices.get(p.id);
+    if (!prev || prev.deletedAt) continue;
+    if (prev.regions && Object.keys(prev.regions).length > 0) continue;
+    await database.devices.put({ ...prev, regions: { ...p.regions } });
   }
 }
 
@@ -329,7 +343,9 @@ export async function upsertVitalTick(opts: {
 }
 
 export async function getLocalSettings(database: ChartDB = db): Promise<LocalSettings> {
-  return (await database.localSettings.get(LOCAL_SETTINGS_ID)) ?? defaultLocalSettings();
+  const cur = await database.localSettings.get(LOCAL_SETTINGS_ID);
+  if (!cur) return defaultLocalSettings();
+  return { ...defaultLocalSettings(), ...cur, id: LOCAL_SETTINGS_ID };
 }
 
 /** Ключ API не пишем в историю правок. */
