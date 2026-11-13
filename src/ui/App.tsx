@@ -4,6 +4,7 @@ import { db, newCase, saveWithAudit, type CaseRec, type Stage } from '../db/db';
 import { SPECIES_RU, parseNum, fmt } from '../core/logic';
 import { HeaderScreen } from './HeaderScreen';
 import { SettingsScreen } from './SettingsScreen';
+import { PremedScreen } from './PremedScreen';
 
 export const STAGES: { key: Stage; ru: string }[] = [
   { key: 'header', ru: 'Шапка' }, { key: 'premed', ru: 'Премедикация' }, { key: 'induction', ru: 'Индукция' },
@@ -54,7 +55,9 @@ export function App() {
     {route.v === 'settings' && <SettingsScreen onSaved={setSave} />}
     {route.v === 'case' && (route.stage === 'header'
       ? <HeaderScreen key={route.id} id={route.id} onSaved={setSave} />
-      : <Placeholder id={route.id} stage={route.stage} />)}
+      : route.stage === 'premed'
+        ? <PremedScreen key={route.id} id={route.id} onSaved={setSave} />
+        : <Placeholder id={route.id} stage={route.stage} />)}
   </div>;
 }
 
@@ -77,6 +80,6 @@ function CaseList() {
 
 function Placeholder({ id, stage }: { id: string; stage: Stage }) {
   const s = STAGES.find(x => x.key === stage)!;
-  return <><div className="main"><div className="ph"><b>{s.ru}</b><span className="muted">Этот экран будет в следующем шаге. Шапка карты уже сохраняется на планшете.</span></div></div>
+  return <><div className="main"><div className="ph"><b>{s.ru}</b><span className="muted">Этот экран будет в следующем шаге. Шапка и премедикация уже сохраняются на планшете.</span></div></div>
     <div className="bar"><div style={{ flex: 1 }} /><button className="btn sec" onClick={() => go(`/case/${id}/header`)}>← К шапке</button></div></>;
 }

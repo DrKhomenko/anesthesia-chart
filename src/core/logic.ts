@@ -13,10 +13,12 @@ export function parseNum(input: string | number | null | undefined): number {
   return Number(s);
 }
 
-/** Формат с запятой, без лишних нулей. */
+/** Формат с запятой, без лишних нулей. Округляет как врач на бумаге (0,825 → 0,83), не как toFixed. */
 export function fmt(n: number, digits = 2): string {
   if (!Number.isFinite(n)) return '—';
-  return String(Number(n.toFixed(digits))).replace('.', ',');
+  const p = 10 ** digits;
+  const r = Math.round((n + Math.sign(n) * 1e-10) * p) / p;
+  return String(r).replace('.', ',');
 }
 
 export type DoseResult =
@@ -117,4 +119,164 @@ export function infusionTotalMl(segments: InfusionSegment[], end: Date): number 
     total += seg.rateMlH * h;
   });
   return Math.round(total * 10) / 10;
+}
+
+// --- Время: список вокруг «сейчас» ---
+export function pad2(n: number): string { return String(n).padStart(2, '0'); }
+export function fmtTime(d: Date): string { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+
+/** Разбор «14:05», «14.05», «1405». Дата берётся из base, секунды обнуляются. */
+export function parseTimeInput(text: string, base = new Date()): Date | null {
+  const s = text.trim().replace(/[.,]/g, ':');
+  let h: number, m: number;
+  const colon = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (colon) { h = Number(colon[1]); m = Number(colon[2]); }
+  else if (/^\d{3,4}$/.test(s)) { const t = s.padStart(4, '0'); h = Number(t.slice(0, 2)); m = Number(t.slice(2)); }
+  else return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  const d = new Date(base.getTime());
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+
+export function applyClock(base: Date, hours: number, minutes: number): Date {
+  const d = new Date(base.getTime());
+  d.setHours(hours, minutes, 0, 0);
+  return d;
+}
+
+export interface TimeSlot { date: Date; label: string; isNow?: boolean }
+
+/** Список времён вокруг now: крупный шаг (5 мин) в окне и мелкий (1 мин) рядом с now. Всегда включает точное «сейчас». */
+export function generateTimeList(now: Date, opts: { stepMin?: number; beforeMin?: number; afterMin?: number; fineStepMin?: number; fineWindowMin?: number; selected?: Date | null } = {}): TimeSlot[] {
+  const step = opts.stepMin ?? 5;
+  const before = opts.beforeMin ?? 480;
+  const after = opts.afterMin ?? 240;
+  const fine = opts.fineStepMin ?? 1;
+  const fineWin = opts.fineWindowMin ?? 10;
+  const origin = new Date(now.getTime());
+  origin.setSeconds(0, 0);
+  const map = new Map<number, TimeSlot>();
+  const add = (d: Date, isNow = false) => {
+    const x = new Date(d.getTime()); x.setSeconds(0, 0);
+    const k = x.getTime();
+    const prev = map.get(k);
+    if (!prev || isNow) map.set(k, { date: x, label: fmtTime(x), isNow: isNow || prev?.isNow });
+  };
+  const walk = (from: Date, to: Date, st: number) => {
+    const cur = new Date(from.getTime());
+    const min = cur.getMinutes();
+    cur.setMinutes(min - (min % st), 0, 0); // ближайшая отметка шага в начале окна
+    while (cur.getTime() <= to.getTime() + 500) { add(new Date(cur.getTime())); cur.setMinutes(cur.getMinutes() + st); }
+  };
+  walk(new Date(origin.getTime() - before * 60_000), new Date(origin.getTime() + after * 60_000), step);
+  walk(new Date(origin.getTime() - fineWin * 60_000), new Date(origin.getTime() + fineWin * 60_000), fine);
+  add(origin, true);
+  if (opts.selected) add(new Date(opts.selected.getTime()));
+  return [...map.values()].sort((a, b) => a.date.getTime() - b.date.getTime());
+}
+
+// --- Предустановки дозы ---
+function niceStep(span: number, target = 8): number {
+  if (!(span > 0)) return 1;
+  const raw = span / target;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [1, 2, 5, 10]) if (m * mag >= raw * 0.8) return m * mag;
+  return 10 * mag;
+}
+const doseKey = (n: number) => Number(n.toPrecision(8));
+
+/** Предустановки: от мин до макс с «красивым» шагом, плюс недавно использованные. Без рамок — только недавние. */
+export function dosePresets(opts: { min?: number | null; max?: number | null; recent?: number[] }): number[] {
+  const set = new Set<number>();
+  const add = (n: number) => { if (Number.isFinite(n) && n > 0) set.add(doseKey(n)); };
+  const lo = opts.min != null && Number.isFinite(opts.min) ? opts.min : null;
+  const hi = opts.max != null && Number.isFinite(opts.max) ? opts.max : null;
+  if (lo != null && hi != null && hi > lo) {
+    const step = niceStep(hi - lo);
+    add(lo);
+    const start = Math.ceil((lo + step * 1e-9) / step) * step;
+    for (let v = start; v < hi - step * 1e-9; v = doseKey(v + step)) add(v);
+    add(hi);
+  } else {
+    if (lo != null && lo > 0) add(lo);
+    if (hi != null && hi > 0) add(hi);
+  }
+  for (const r of opts.recent ?? []) add(r);
+  return [...set].sort((a, b) => a - b);
+}
+
+// --- Справочник: нормализация и дедупликация ---
+export function normalizeCatalogName(name: string): string { return name.trim().replace(/\s+/g, ' '); }
+
+export type CatalogAdd =
+  | { ok: true; name: string }
+  | { ok: false; reason: 'empty' | 'duplicate'; existingName?: string };
+
+/** Проверка перед добавлением в справочник. existing — уже отфильтрованный список (например, породы этого вида). */
+export function canAddCatalogItem(name: string, existing: { name: string; deletedAt?: string | null }[]): CatalogAdd {
+  const n = normalizeCatalogName(name);
+  if (!n) return { ok: false, reason: 'empty' };
+  const hit = existing.find(x => normalizeCatalogName(x.name).toLowerCase() === n.toLowerCase());
+  if (hit) return { ok: false, reason: 'duplicate', existingName: hit.name };
+  return { ok: true, name: n };
+}
+
+// --- Лимиты физикальных и лабораторных показателей (значения задаёт клиника) ---
+export type ExamLabParam =
+  | 'hr' | 'rr' | 'tempC' | 'crtSec' | 'map' | 'sys' | 'dia' | 'spo2' | 'weightKg'
+  | 'hctPct' | 'totalProteinGl' | 'albuminGl' | 'glucoseMmolL' | 'lactateMmolL'
+  | 'creatinineUmolL' | 'ureaMmolL' | 'potassiumMmolL' | 'sodiumMmolL' | 'icaMmolL'
+  | 'plateletsE9L' | 'wbcE9L';
+
+export const EXAM_LAB_PARAMS: { key: ExamLabParam; group: 'physical' | 'lab'; label: string; unit: string }[] = [
+  { key: 'hr', group: 'physical', label: 'ЧСС', unit: 'уд/мин' },
+  { key: 'rr', group: 'physical', label: 'ЧДД', unit: 'в мин' },
+  { key: 'tempC', group: 'physical', label: 'T', unit: '°C' },
+  { key: 'crtSec', group: 'physical', label: 'СРК', unit: 'с' },
+  { key: 'sys', group: 'physical', label: 'САД', unit: 'мм рт. ст.' },
+  { key: 'map', group: 'physical', label: 'МАД', unit: 'мм рт. ст.' },
+  { key: 'dia', group: 'physical', label: 'ДАД', unit: 'мм рт. ст.' },
+  { key: 'spo2', group: 'physical', label: 'SpO₂', unit: '%' },
+  { key: 'weightKg', group: 'physical', label: 'Вес', unit: 'кг' },
+  { key: 'hctPct', group: 'lab', label: 'Ht (НСТ)', unit: '%' },
+  { key: 'totalProteinGl', group: 'lab', label: 'Общий белок', unit: 'г/л' },
+  { key: 'albuminGl', group: 'lab', label: 'Альбумин', unit: 'г/л' },
+  { key: 'glucoseMmolL', group: 'lab', label: 'Глюкоза', unit: 'ммоль/л' },
+  { key: 'lactateMmolL', group: 'lab', label: 'Лактат', unit: 'ммоль/л' },
+  { key: 'creatinineUmolL', group: 'lab', label: 'Креатинин', unit: 'мкмоль/л' },
+  { key: 'ureaMmolL', group: 'lab', label: 'Мочевина', unit: 'ммоль/л' },
+  { key: 'potassiumMmolL', group: 'lab', label: 'K⁺', unit: 'ммоль/л' },
+  { key: 'sodiumMmolL', group: 'lab', label: 'Na⁺', unit: 'ммоль/л' },
+  { key: 'icaMmolL', group: 'lab', label: 'iCa', unit: 'ммоль/л' },
+  { key: 'plateletsE9L', group: 'lab', label: 'Тромбоциты', unit: '×10⁹/л' },
+  { key: 'wbcE9L', group: 'lab', label: 'Лейкоциты', unit: '×10⁹/л' },
+];
+export const EXAM_LAB_KEYS = EXAM_LAB_PARAMS.map(p => p.key);
+export const EXAM_LAB_RU: Record<ExamLabParam, { label: string; unit: string; group: 'physical' | 'lab' }> =
+  Object.fromEntries(EXAM_LAB_PARAMS.map(p => [p.key, { label: p.label, unit: p.unit, group: p.group }])) as Record<ExamLabParam, { label: string; unit: string; group: 'physical' | 'lab' }>;
+
+export interface ExamLabLimit { species: Species; parameter: ExamLabParam; low?: number | null; high?: number | null }
+export type LimitCheck =
+  | { state: 'empty' }
+  | { state: 'invalid'; message: string }
+  | { state: 'not-configured'; message: string }
+  | { state: 'ok' }
+  | { state: 'warn'; message: string };
+
+/** Проверка значения по лимитам клиники. Нет рамок — «не настроено», не блокируем. Значения по умолчанию не подставляются. */
+export function checkLimit(species: Species, parameter: ExamLabParam, value: string | number | null | undefined, limits: ExamLabLimit[]): LimitCheck {
+  if (value === '' || value == null) return { state: 'empty' };
+  const v = parseNum(value);
+  if (Number.isNaN(v)) return { state: 'invalid', message: 'Не число' };
+  if (v < 0) return { state: 'invalid', message: 'Значение не может быть отрицательным' };
+  const l = limits.find(x => x.species === species && x.parameter === parameter);
+  const min = l?.low ?? null, max = l?.high ?? null;
+  if (min == null && max == null) return { state: 'not-configured', message: 'не настроено' };
+  if ((min == null || v >= min) && (max == null || v <= max)) return { state: 'ok' };
+  const meta = EXAM_LAB_RU[parameter];
+  const message = max != null && v > max
+    ? `${meta.label} ${fmt(v, 2)} > ${fmt(max, 2)} ${meta.unit}`
+    : `${meta.label} ${fmt(v, 2)} < ${fmt(min!, 2)} ${meta.unit}`;
+  return { state: 'warn', message };
 }

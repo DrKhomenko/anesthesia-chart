@@ -10,7 +10,7 @@ export default defineConfig({
     manifest: { name: 'Анестезиологическая карта', short_name: 'Наркоз', lang: 'ru', display: 'standalone', orientation: 'landscape',
       background_color: '#000000', theme_color: '#000000', start_url: './', scope: './',
       icons: [{ src: 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }] },
-    workbox: { globPatterns: ['**/*.{js,css,html,png,svg,ico,webmanifest}'], navigateFallback: 'index.html' },
+    workbox: { globPatterns: ['**/*.{js,css,html,png,svg,ico,webmanifest}'], navigateFallback: 'index.html', skipWaiting: true, clientsClaim: true },
   })],
   preview: { host: true, allowedHosts: true },
   server: { host: true, allowedHosts: true },
