@@ -11,6 +11,7 @@ import { RecoveryScreen } from './RecoveryScreen';
 import { PrintView } from './PrintView';
 import { computeTimeline, timelineSummary, timelineCompact } from '../core/timeline';
 import { useSyncLoop } from './useSync';
+import { flushOpenCase } from './useCase';
 
 export const STAGES: { key: Stage; ru: string }[] = [
   { key: 'header', ru: 'Шапка' }, { key: 'premed', ru: 'Премедикация' }, { key: 'induction', ru: 'Индукция' },
@@ -27,6 +28,12 @@ function parseHash(): Route {
   return { v: 'list' };
 }
 export const go = (h: string) => { location.hash = h; };
+/** Уйти к списку карт, предварительно сохранив черновик открытой карты. */
+export async function goToCaseList(): Promise<void> {
+  await flushOpenCase();
+  go('/');
+}
+
 
 function useClock() { const [t, setT] = useState(new Date()); useEffect(() => { const i = setInterval(() => setT(new Date()), 10_000); return () => clearInterval(i); }, []); return t; }
 function useOnline() { const [o, setO] = useState(navigator.onLine); useEffect(() => { const f = () => setO(navigator.onLine); addEventListener('online', f); addEventListener('offline', f); return () => { removeEventListener('online', f); removeEventListener('offline', f); }; }, []); return o; }
@@ -54,9 +61,10 @@ export function App() {
 
   return <div className="app">
     <div className={`top ${tlText ? 'has-dur' : ''}`}>
-      <button className="pt" style={{ textAlign: 'left' }} onClick={() => go('/')} aria-label="К списку карт"><b>{title}</b><span>{sub}</span></button>
+      {route.v !== 'list' && <button type="button" className="btn sm sec to-cards" onClick={() => void goToCaseList()}>Карты</button>}
+      <div className="pt"><b>{title}</b><span>{sub}</span></div>
       {route.v === 'case' ? <nav className="steps">{STAGES.map((s, i) =>
-        <button key={s.key} className={s.key === route.stage ? 'on' : i < stageIdx ? 'done' : ''} onClick={() => go(`/case/${route.id}/${s.key}`)}>{s.ru}</button>)}</nav>
+        <button key={s.key} className={s.key === route.stage ? 'on' : i < stageIdx ? 'done' : ''} onClick={() => void (async () => { await flushOpenCase(); go(`/case/${route.id}/${s.key}`); })()}>{s.ru}</button>)}</nav>
         : <div style={{ marginLeft: 'auto' }} />}
       <div className={`pill ${save === 'saving' ? 'wait' : 'ok'}`}><i /><span className="pill-full">{save === 'saving' ? 'Сохраняю…' : 'Сохранено на планшете'}</span><span className="pill-short">{save === 'saving' ? 'Сохраняю…' : 'Сохранено'}</span></div>
       <div className="net">{online ? 'Сеть есть' : 'Нет сети'}{sync ? ` · ${sync}` : ''}</div>

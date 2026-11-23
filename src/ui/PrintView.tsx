@@ -3,7 +3,7 @@ import { db, CLINIC_SETTINGS_ID, DEFAULT_CLINIC_NAME, defaultGasOf, recoveryScal
 import { SPECIES_RU, fmt, fmtTime } from '../core/logic';
 import { computeTimeline, fmtDuration } from '../core/timeline';
 import { buildSeries, drugTotals, niceRange, type Series } from '../core/report';
-import { go } from './App';
+import { go, goToCaseList } from './App';
 import { formatTickGas, gasColumnLabel, resolveCaseGas } from '../core/gas';
 import { formatVolumeMl, infusionChangesText, infusionVolumeMl, liveInfusions, startedAtOf } from '../core/infusions';
 
@@ -28,6 +28,7 @@ export function PrintView({ id }: { id: string }) {
   if (!data.c) return <div className="pdoc">Карта не найдена. <button onClick={() => go('/')}>К списку</button></div>;
   return <div className="pdoc">
     <div className="pdoc-bar noprint">
+      <button className="btn sec" onClick={() => void goToCaseList()}>Карты</button>
       <button className="btn sec" onClick={() => go(`/case/${id}/recovery`)}>← Назад</button>
       <button className="btn pri" onClick={() => window.print()}>Сохранить PDF / Печать</button>
       <span className="pdoc-hint">На iPad/iPhone: «Печать» → жест «развести двумя пальцами» на превью или «Поделиться» → «Сохранить в Файлы». Работает без интернета.</span>
