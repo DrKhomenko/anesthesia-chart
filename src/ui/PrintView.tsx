@@ -1,11 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, CLINIC_SETTINGS_ID, DEFAULT_CLINIC_NAME, defaultGasOf, recoveryScaleOf, type CaseRec, type DrugAdmin, type Infusion, type VitalTick } from '../db/db';
+import { db, CLINIC_SETTINGS_ID, DEFAULT_CLINIC_NAME, defaultGasOf, recoveryScaleOf, type CaseRec, type DrugAdmin, type Infusion, type RegionalBlock, type VitalTick } from '../db/db';
 import { SPECIES_RU, fmt, fmtTime } from '../core/logic';
 import { computeTimeline, fmtDuration } from '../core/timeline';
 import { buildSeries, drugTotals, niceRange, type Series } from '../core/report';
 import { go, goToCaseList } from './App';
 import { formatTickGas, gasColumnLabel, resolveCaseGas } from '../core/gas';
 import { formatVolumeMl, infusionChangesText, infusionVolumeMl, liveInfusions, startedAtOf } from '../core/infusions';
+import { formatAnestheticLine, guidanceLabel, liveBlocks, sideLabel } from '../core/regional';
 
 
 const PHASE_RU: Record<string, string> = { premed: 'Премедикация', induction: 'Индукция', maintenance: 'Поддержание', recovery: 'Пробуждение', cpr: 'СЛР' };
@@ -22,7 +23,8 @@ export function PrintView({ id }: { id: string }) {
     const ticks = (await db.vitals.where('caseId').equals(id).toArray()).filter(t => !t.deletedAt).sort((a, b) => a.at.localeCompare(b.at));
     const clinic = await db.clinicSettings.get(CLINIC_SETTINGS_ID);
     const infusions = liveInfusions(await db.infusions.where('caseId').equals(id).toArray());
-    return { c, admins, ticks, clinic, infusions };
+    const blocks = liveBlocks(await db.regionalBlocks.where('caseId').equals(id).toArray());
+    return { c, admins, ticks, clinic, infusions, blocks };
   }, [id]);
   if (!data) return <div className="pdoc">Загрузка…</div>;
   if (!data.c) return <div className="pdoc">Карта не найдена. <button onClick={() => go('/')}>К списку</button></div>;
@@ -33,11 +35,11 @@ export function PrintView({ id }: { id: string }) {
       <button className="btn pri" onClick={() => window.print()}>Сохранить PDF / Печать</button>
       <span className="pdoc-hint">На iPad/iPhone: «Печать» → жест «развести двумя пальцами» на превью или «Поделиться» → «Сохранить в Файлы». Работает без интернета.</span>
     </div>
-    <ChartDoc c={data.c} admins={data.admins} ticks={data.ticks} infusions={data.infusions} clinicName={data.clinic?.clinicName?.trim() || DEFAULT_CLINIC_NAME} scale={recoveryScaleOf(data.clinic)} defaultGas={defaultGasOf(data.clinic)} />
+    <ChartDoc c={data.c} admins={data.admins} ticks={data.ticks} infusions={data.infusions} blocks={data.blocks} clinicName={data.clinic?.clinicName?.trim() || DEFAULT_CLINIC_NAME} scale={recoveryScaleOf(data.clinic)} defaultGas={defaultGasOf(data.clinic)} />
   </div>;
 }
 
-export function ChartDoc({ c, admins, ticks, infusions = [], clinicName, scale, defaultGas }: { c: CaseRec; admins: DrugAdmin[]; ticks: VitalTick[]; infusions?: Infusion[]; clinicName: string; scale: string[]; defaultGas?: ReturnType<typeof defaultGasOf> }) {
+export function ChartDoc({ c, admins, ticks, infusions = [], blocks = [], clinicName, scale, defaultGas }: { c: CaseRec; admins: DrugAdmin[]; ticks: VitalTick[]; infusions?: Infusion[]; blocks?: RegionalBlock[]; clinicName: string; scale: string[]; defaultGas?: ReturnType<typeof defaultGasOf> }) {
   const tl = computeTimeline({ ...c, firstPremedAt: admins.find(a => a.phase === 'premed')?.givenAt ?? null });
   const ind = c.induction ?? {}; const r = c.recovery ?? {};
   const pv = c.preInductionVitals ?? {}; const bv = c.baselineVitals ?? {};
@@ -128,6 +130,19 @@ export function ChartDoc({ c, admins, ticks, infusions = [], clinicName, scale, 
             <td className="n">{formatVolumeMl(vol)}</td>
           </tr>;
         })}
+      </tbody></table>}
+    <h2>Регионарная анестезия</h2>
+    {blocks.length === 0 ? <div className="psub">Нет записей</div> :
+      <table><thead><tr><th>Время</th><th>Блокада</th><th>Сторона</th><th>Анестетик</th><th>Наведение</th><th>Адъювант</th><th>Примечание</th></tr></thead><tbody>
+        {blocks.map(b => <tr key={b.id}>
+          <td>{tm(b.at)}</td>
+          <td>{b.blockName || '—'}</td>
+          <td>{sideLabel(b.side)}</td>
+          <td>{(b.anesthetics ?? []).length ? (b.anesthetics ?? []).map(a => formatAnestheticLine(a, c.weightKg)).join('; ') : '—'}</td>
+          <td>{guidanceLabel(b.guidance)}</td>
+          <td>{b.adjuvant?.trim() || '—'}</td>
+          <td>{b.note?.trim() || '—'}</td>
+        </tr>)}
       </tbody></table>}
     <div className="avoid">
       <h2>Пробуждение</h2>

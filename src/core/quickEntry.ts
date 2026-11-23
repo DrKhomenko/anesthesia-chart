@@ -256,18 +256,66 @@ export function syncDraftMap(draft: Record<string, string>, mapManual: boolean):
   return { ...draft, nibpMap: next };
 }
 
-/** Пустые поля не попадают в запись — ими ничего не затирается. */
-export function entryDraftToPatch(draft: Record<string, string>, fields: EntryField[], opts?: { mapManual?: boolean }): Partial<VitalFields> {
-  const patch: Partial<VitalFields> = {};
+export type FieldTouch = 'untouched' | 'edited' | 'cleared';
+
+/** Итоговое значение поля: введённое, явно очищенное или прошлое, если поле не трогали. */
+export function effectiveFieldValue(
+  draft: Record<string, string>,
+  key: string,
+  prev: VitalFields | null | undefined,
+  touch?: FieldTouch,
+): string {
+  const t = touch ?? 'untouched';
+  if (t === 'cleared') return '';
+  const raw = (draft[key] ?? '').trim();
+  if (t === 'edited' || raw !== '') return draft[key] ?? '';
+  return formatPrevious(prev, key);
+}
+
+/** Подставляет прошлые значения во все нетронутые поля. Очищенные остаются пустыми. */
+export function carryPreviousIntoDraft(
+  draft: Record<string, string>,
+  fields: EntryField[],
+  prev: VitalFields | null | undefined,
+  touch: Record<string, FieldTouch> = {},
+): Record<string, string> {
+  const next = { ...draft };
   for (const f of fields) {
-    const v = parseEntryValue(draft[f.key] ?? '', f);
+    const t = touch[f.key] ?? 'untouched';
+    if (t === 'cleared') { next[f.key] = ''; continue; }
+    if (t === 'edited') continue;
+    if ((next[f.key] ?? '').trim() !== '') continue;
+    const s = formatPrevious(prev, f.key);
+    if (s !== '') next[f.key] = s;
+  }
+  return next;
+}
+
+/** Пустые поля не попадают в запись — ими ничего не затирается. */
+export function entryDraftToPatch(draft: Record<string, string>, fields: EntryField[], opts?: {
+  mapManual?: boolean;
+  previous?: VitalFields | null;
+  touch?: Record<string, FieldTouch>;
+}): Partial<VitalFields> {
+  const carried = opts?.previous != null || opts?.touch
+    ? carryPreviousIntoDraft(draft, fields, opts.previous, opts.touch ?? {})
+    : draft;
+  const patch: Partial<VitalFields> = {};
+  const mapEdited = opts?.mapManual === true || opts?.touch?.nibpMap === 'edited';
+  for (const f of fields) {
+    const t = opts?.touch?.[f.key] ?? 'untouched';
+    if (t === 'cleared') continue;
+    // Неперенесённое или нетронутое МАД не пишем — его пересчитает attachMapToPatch из итоговых САД/ДАД.
+    if (f.key === 'nibpMap' && !mapEdited) continue;
+    const v = parseEntryValue(carried[f.key] ?? '', f);
     if (v == null || v === '') continue;
     const tickKey = ENTRY_TO_TICK[f.key] ?? (f.key as keyof VitalFields);
     (patch as Record<string, unknown>)[tickKey] = v;
   }
   if (patch.tempC != null && patch.t2 == null) patch.t2 = patch.tempC;
   if (patch.vtInsp != null && patch.tidalVolume == null) patch.tidalVolume = patch.vtInsp;
-  return attachMapToPatch(patch, opts?.mapManual);
+  const mapManual = opts?.mapManual ?? (opts?.touch?.nibpMap === 'edited' ? true : undefined);
+  return attachMapToPatch(patch, mapManual);
 }
 
 export { MACHINE_FIELDS, MONITOR_FIELDS };

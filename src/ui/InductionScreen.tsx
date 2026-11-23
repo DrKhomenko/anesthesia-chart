@@ -3,6 +3,7 @@ import { go, type SaveState } from './App';
 import { TimePicker, Field } from './pickers';
 import { PhaseDrugs } from './PhaseDrugs';
 import { InfusionsSection } from './InfusionsSection';
+import { RegionalSection } from './RegionalSection';
 import { Seg, YesNoSeg, Labeled, Notes } from './formBits';
 import type { InductionData } from '../db/db';
 
@@ -29,6 +30,7 @@ export function InductionScreen({ id, onSaved }: { id: string; onSaved: (s: Save
       <PhaseDrugs c={c} phase="induction" title="Препараты индукции" onSaved={onSaved}
         emptyText="Выберите препарат из справочника клиники. Дозу выбираете вы, мг и мл посчитаются по весу и концентрации." />
       <InfusionsSection c={c} onSaved={onSaved} compact />
+      <RegionalSection c={c} onSaved={onSaved} phase="induction" />
       <section className="card">
         <div className="h">Начальные настройки ИВЛ</div>
         <Seg value={ind.ventMode as string} options={VENT_MODES.map(v => ({ v, ru: v }))} onChange={v => u({ ventMode: v })} />

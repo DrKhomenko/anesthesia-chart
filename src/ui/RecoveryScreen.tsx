@@ -14,6 +14,7 @@ import { resolveTickTime } from '../core/vision';
 import { QuickEntrySheet, type QuickEntryState } from './QuickEntrySheet';
 import { ReminderBar } from './ReminderBar';
 import { InfusionsSection } from './InfusionsSection';
+import { RegionalSection } from './RegionalSection';
 
 export function RecoveryScreen({ id, onSaved }: { id: string; onSaved: (s: SaveState) => void }) {
   const { c, update, flush } = useCaseDraft(id, onSaved);
@@ -95,6 +96,7 @@ export function RecoveryScreen({ id, onSaved }: { id: string; onSaved: (s: SaveS
     <div className="g">
       <PhaseDrugs c={c} phase="recovery" title="Обезболивание после операции" onSaved={onSaved} emptyText="Препараты из справочника клиники, доза выбирается вручную." />
       <InfusionsSection c={c} onSaved={onSaved} compact />
+      <RegionalSection c={c} onSaved={onSaved} compact phase="recovery" />
       <section className="card">
         <div className="h">Перевод</div>
         <Seg value={r.transferTo} options={[{ v: 'ward', ru: 'Стационар' }, { v: 'icu', ru: 'ОРИТ' }, { v: 'home', ru: 'Домой' }]} onChange={v => u({ transferTo: v })} />

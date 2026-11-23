@@ -383,3 +383,13 @@ table.vtable tbody tr.on td:last-child{border-radius:0 10px 10px 0}
   .remind-banner{align-items:flex-start}
   .inf-main{flex-direction:column;align-items:flex-start;gap:2px}
 }
+
+.reg-anest{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-top:1px solid var(--line,#333)}
+.reg-num{text-align:left;display:flex;flex-direction:column;align-items:stretch;background:var(--field);border:0;border-radius:12px;padding:8px 12px;color:inherit;cursor:pointer}
+.reg-num.on{outline:2px solid var(--blue)}
+.reg-num-v{font-size:28px;font-weight:600;min-height:36px;line-height:1.1}
+.reg-keys{margin-top:8px;flex:0 0 auto;padding-top:4px;background:#1c1c1e}
+@media (max-width:600px){
+  .reg-keys .qe-key{min-height:48px;font-size:24px}
+  .reg-keys{gap:6px}
+}

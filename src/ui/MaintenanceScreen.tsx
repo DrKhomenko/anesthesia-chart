@@ -18,6 +18,7 @@ import { entryFieldOrder, previousTick } from '../core/quickEntry';
 import { formatTickGas, gasColumnLabel, resolveCaseGas } from '../core/gas';
 import { ReminderBar } from './ReminderBar';
 import { InfusionsSection } from './InfusionsSection';
+import { RegionalSection } from './RegionalSection';
 
 
 const BASE_COLS: { key: string; label: string; get: (t: VitalTick) => string }[] = [
@@ -332,6 +333,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
       </div>
     </section>}
     <InfusionsSection c={c} onSaved={onSaved} />
+    <RegionalSection c={c} onSaved={onSaved} compact phase="maintenance" />
   </div></div>
   <div className="bar">
     <button className="btn sec" onClick={() => go(`/case/${c.id}/induction`)}>← К индукции</button>

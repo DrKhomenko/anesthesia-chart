@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import type { VitalFields } from '../db/db';
 import {
-  applyKeypad, copyAllPrevious, copyPreviousValue, emptyDraft, entryDraftToPatch,
-  formatPrevious, isEntryOutOfRange, syncDraftMap, withGasField, type EntryField,
+  applyKeypad, copyAllPrevious, emptyDraft, entryDraftToPatch, effectiveFieldValue,
+  formatPrevious, isEntryOutOfRange, syncDraftMap, withGasField,
+  type EntryField, type FieldTouch,
 } from '../core/quickEntry';
 import { calcMap, fmt } from '../core/logic';
 import type { GasId } from '../core/gas';
@@ -35,59 +36,70 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
   const startIdx = Math.max(0, fields.findIndex(f => f.key === state.startKey));
   const [idx, setIdx] = useState(startIdx < 0 ? 0 : startIdx);
   const [draft, setDraft] = useState(() => ({ ...emptyDraft(entryFieldOrderSafe(state.fields)), ...(state.initialDraft ?? {}) }));
+  const [touch, setTouch] = useState<Record<string, FieldTouch>>({});
   const [mapManual, setMapManual] = useState(!!state.mapManual);
   const needGas = !gas;
   const field = needGas ? null : (fields[idx] ?? fields[0]);
   const raw = field ? (draft[field.key] ?? '') : '';
   const prevText = field ? formatPrevious(state.previous, field.key) : '';
+  const fieldTouch = field ? (touch[field.key] ?? 'untouched') : 'untouched';
+  const effective = field ? effectiveFieldValue(draft, field.key, state.previous, fieldTouch) : '';
   const hasPrev = !!state.previous && fields.some(f => formatPrevious(state.previous, f.key) !== '');
-  const oor = field ? isEntryOutOfRange(field, raw) : false;
+  const oor = field ? isEntryOutOfRange(field, effective) : false;
   const last = !needGas && idx >= fields.length - 1;
-  const filled = useMemo(() => fields.filter(f => (draft[f.key] ?? '').trim() !== '').length, [draft, fields]);
-  const autoMap = field?.key === 'nibpMap' && !mapManual && calcMap(draft.nibpSys, draft.nibpDia) != null;
+  const filled = useMemo(
+    () => fields.filter(f => effectiveFieldValue(draft, f.key, state.previous, touch[f.key]).trim() !== '').length,
+    [draft, fields, touch, state.previous],
+  );
+  const effSys = effectiveFieldValue(draft, 'nibpSys', state.previous, touch.nibpSys);
+  const effDia = effectiveFieldValue(draft, 'nibpDia', state.previous, touch.nibpDia);
+  const autoMap = field?.key === 'nibpMap' && !mapManual && fieldTouch !== 'edited' && calcMap(effSys, effDia) != null;
 
-  const setRaw = (v: string) => {
+  const setRaw = (v: string, how?: FieldTouch) => {
     if (!field) return;
-    if (field.key === 'nibpMap') setMapManual(v.trim() !== '');
+    const t: FieldTouch = how ?? (v.trim() === '' ? 'cleared' : 'edited');
+    setTouch(s => ({ ...s, [field.key]: t }));
+    if (field.key === 'nibpMap') setMapManual(t === 'edited' && v.trim() !== '');
     setDraft(s => {
-      const next = { ...s, [field.key]: v };
+      const next = { ...s, [field.key]: t === 'cleared' ? '' : v };
       if (field.key === 'nibpSys' || field.key === 'nibpDia') return syncDraftMap(next, mapManual);
       return next;
     });
   };
   const skip = () => setIdx(i => Math.min(fields.length - 1, i + 1));
+  const commitWith = (d: Record<string, string>, t: Record<string, FieldTouch>, man: boolean) => {
+    onConfirm(entryDraftToPatch(d, fields, { mapManual: man, previous: state.previous, touch: t }), at);
+  };
+  const commit = () => commitWith(draft, touch, mapManual);
   const next = () => { if (last) commit(); else skip(); };
-  const copyOne = () => {
+  const clearAndNext = () => {
     if (!field) return;
-    setDraft(s => {
-      const n = copyPreviousValue(s, field.key, state.previous);
-      if (field.key === 'nibpMap') {
-        const m = calcMap(n.nibpSys, n.nibpDia);
-        const typed = (n.nibpMap ?? '').trim();
-        setMapManual(typed !== '' && (m == null || typed !== fmt(m, 0)));
-      }
-      if (field.key === 'nibpSys' || field.key === 'nibpDia') return syncDraftMap(n, mapManual);
-      return n;
-    });
+    const t = { ...touch, [field.key]: 'cleared' as const };
+    const d = { ...draft, [field.key]: '' };
+    let man = mapManual;
+    if (field.key === 'nibpMap') man = false;
+    setTouch(t); setDraft(d); if (field.key === 'nibpMap') setMapManual(false);
+    if (last) commitWith(d, t, man); else skip();
   };
   const copyAll = () => setDraft(s => {
     const n = copyAllPrevious(s, fields.map(f => f.key), state.previous);
+    const t: Record<string, FieldTouch> = { ...touch };
+    for (const f of fields) if ((n[f.key] ?? '').trim() !== '') t[f.key] = 'edited';
+    setTouch(t);
     const m = calcMap(n.nibpSys, n.nibpDia);
     const typed = (n.nibpMap ?? '').trim();
     const man = typed !== '' && (m == null || typed !== fmt(m, 0));
     setMapManual(man);
     return syncDraftMap(n, man);
   });
-  const commit = () => onConfirm(entryDraftToPatch(draft, fields, { mapManual }), at);
   const press = (k: string) => {
     if (!field) return;
     if (k === ',' && !field.allowDecimal) return;
-    setRaw(applyKeypad(raw, k, field.allowDecimal));
+    setRaw(applyKeypad(raw, k, field.allowDecimal), 'edited');
   };
   const switchGas = (g: GasId) => {
     setGas(g);
     onGasChange?.(g);
-    // если стояли на поле газа — остаёмся на нём после смены
     setIdx(i => {
       const cur = fields[i];
       if (cur && FIELD_TO_GAS[cur.key]) {
@@ -99,8 +111,8 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
     });
   };
 
-  const display = field ? (raw || prevText) : '';
-  const ghost = !!field && raw === '' && prevText !== '' && !autoMap;
+  const ghost = !!field && fieldTouch === 'untouched' && raw === '' && prevText !== '' && !autoMap;
+  const display = field ? (autoMap ? (fmt(calcMap(effSys, effDia) as number, 0) || effective || '—') : (effective || '—')) : '';
 
   return <div className="ov center qe-ov" onClick={onCancel} role="presentation">
     <div className="sheet wide qe-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Новая запись">
@@ -131,20 +143,21 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
         </div>}
         <div className="qe-body">
           <div className="qe-fl">{field.label}{field.unit ? ` · ${field.unit}` : ''}{FIELD_TO_GAS[field.key] ? ` · ${GAS_RU[FIELD_TO_GAS[field.key]]}` : ''}</div>
-          <div className={`qe-val ${ghost ? 'ghost' : ''} ${oor && !ghost ? 'warn' : ''}`} aria-live="polite">
+          <div className={`qe-val ${ghost ? 'ghost' : ''} ${oor && effective ? 'warn' : ''}`} aria-live="polite">
             {display || '—'}
           </div>
-          {oor && !ghost && <div className="lh w qe-hint">вне рамки {field.min ?? '…'}–{field.max ?? '…'}</div>}
+          {oor && effective && <div className="lh w qe-hint">вне рамки {field.min ?? '…'}–{field.max ?? '…'}</div>}
           {field.key === 'nibpMap' && autoMap && <div className="muted small qe-hint">считается само из САД и ДАД · можно поправить</div>}
           {field.key === 'nibpMap' && mapManual && <div className="muted small qe-hint">вручную
-            {' · '}<button type="button" className="link" onClick={() => { setMapManual(false); setDraft(s => syncDraftMap({ ...s, nibpMap: '' }, false)); }}>снова автоматически</button>
+            {' · '}<button type="button" className="link" onClick={() => { setMapManual(false); setTouch(s => ({ ...s, nibpMap: 'untouched' })); setDraft(s => syncDraftMap({ ...s, nibpMap: '' }, false)); }}>снова автоматически</button>
           </div>}
-          {ghost && <div className="muted small qe-hint">прошлое значение · введите новое или нажмите «Как прошлый»</div>}
+          {ghost && <div className="muted small qe-hint">прошлое значение · «Далее» сохранит его, «не измерялось» — не переносить</div>}
+          {fieldTouch === 'cleared' && <div className="muted small qe-hint">не измерялось · прошлое не переносится</div>}
           {field.kind === 'enum' && field.enumValues
             ? <div className="qe-enums">
-                <button type="button" className={`qe-enum ${raw === '' ? 'on' : ''}`} onClick={() => setRaw('')}>—</button>
+                <button type="button" className={`qe-enum ${fieldTouch === 'cleared' || (fieldTouch === 'edited' && raw === '') ? 'on' : ''}`} onClick={() => setRaw('', 'cleared')}>—</button>
                 {field.enumValues.map(v =>
-                  <button key={v} type="button" className={`qe-enum ${raw === v ? 'on' : ''}`} onClick={() => setRaw(v)}>{v}</button>)}
+                  <button key={v} type="button" className={`qe-enum ${raw === v && fieldTouch !== 'cleared' ? 'on' : ''}`} onClick={() => setRaw(v, 'edited')}>{v}</button>)}
               </div>
             : <div className="qe-keys">
                 {KEYS.map(k => {
@@ -155,8 +168,7 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
               </div>}
         </div>
         <div className="qe-nav">
-          <button type="button" className="btn sec" onClick={skip} disabled={last}>Пропустить</button>
-          <button type="button" className="btn sec" onClick={copyOne} disabled={!prevText}>Как прошлый</button>
+          <button type="button" className="btn sec" onClick={clearAndNext}>не измерялось</button>
           <button type="button" className="btn pri" onClick={next}>{last ? 'Готово' : 'Далее →'}</button>
         </div>
       </>}
@@ -182,4 +194,3 @@ function entryFieldOrderSafe(fields: EntryField[]): EntryField[] {
   }
   return [...fields, ...extra];
 }
-

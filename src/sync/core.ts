@@ -1,5 +1,5 @@
 /** Логика синхронизации без сети и без базы: какие таблицы, как сравнивать версии (последняя запись побеждает). */
-export const SYNC_TABLES = ['cases', 'drugs', 'thresholds', 'weightRules', 'drugAdmins', 'vitals', 'infusions', 'events', 'alarms', 'breeds', 'examLabLimits', 'clinicSettings', 'devices'] as const;
+export const SYNC_TABLES = ['cases', 'drugs', 'thresholds', 'weightRules', 'drugAdmins', 'vitals', 'infusions', 'events', 'alarms', 'breeds', 'examLabLimits', 'clinicSettings', 'devices', 'regionalBlocks'] as const;
 export type SyncTable = typeof SYNC_TABLES[number];
 export type RemoteTable = 'cases' | 'records';
 export const remoteTableOf = (t: SyncTable): RemoteTable => (t === 'cases' ? 'cases' : 'records');

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  CLINIC_SETTINGS_ID, clinicInfusionUnits, db, defaultGasOf, getLocalSettings, saveLocalSettings, saveWithAudit,
+  CLINIC_SETTINGS_ID, clinicBlockNames, clinicInfusionUnits, clinicLocalAnesthetics, db, defaultGasOf, getLocalSettings, saveLocalSettings, saveWithAudit,
   type ClinicSettings, type LocalSettings,
 } from '../db/db';
-import { canAddCatalogItem } from '../core/logic';
+import { canAddCatalogItem, parseNum } from '../core/logic';
 import { normalizeReminderInterval } from '../core/reminder';
 import type { DefaultGasSetting } from '../core/gas';
 
@@ -13,6 +13,8 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
   const [loc, setLoc] = useState<LocalSettings | null>(null);
   const [interval, setInterval] = useState('5');
   const [newUnit, setNewUnit] = useState('');
+  const [newBlock, setNewBlock] = useState('');
+  const [newAnest, setNewAnest] = useState('');
   useEffect(() => {
     void getLocalSettings().then(s => {
       setLoc(s);
@@ -29,6 +31,10 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
   const units = clinicInfusionUnits(cs);
   const gas = defaultGasOf(cs);
   const check = canAddCatalogItem(newUnit, units.map((name, i) => ({ id: String(i), name })));
+  const blocks = clinicBlockNames(cs);
+  const anests = clinicLocalAnesthetics(cs);
+  const blockCheck = canAddCatalogItem(newBlock, blocks.map((name, i) => ({ id: String(i), name })));
+  const anestCheck = canAddCatalogItem(newAnest, anests.map((x, i) => ({ id: String(i), name: x.name })));
   return <>
     <section className="card" style={{ marginTop: 16 }}>
       <div className="h">Напоминания о записи показателей</div>
@@ -65,6 +71,41 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
         <button className="btn sm pri" disabled={!check.ok} onClick={() => { if (check.ok) { putClinic({ infusionRateUnits: [...units, check.name] }); setNewUnit(''); } }}>Добавить</button>
       </div>
       <div className="muted small">Только подписи единиц, без доз и пересчётов. Список задаёт клиника.</div>
+    </section>
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="h">Названия блокад</div>
+      <div className="chipbar">{blocks.map(n => <span key={n} className="chip">{n}
+        <button className="x" aria-label={`Убрать ${n}`} style={{ marginLeft: 6 }} onClick={() => putClinic({ blockNames: blocks.filter(x => x !== n) })}>✕</button></span>)}</div>
+      {blocks.length === 0 && <div className="muted small">Список изначально пустой. Клиника добавляет свои названия, например «эпидуральная» или «TAP».</div>}
+      <div className="row" style={{ marginTop: 10 }}>
+        <label className="field" style={{ flex: 1 }}><span className="fl">Новое название</span>
+          <input value={newBlock} placeholder="например TAP" onChange={e => setNewBlock(e.target.value)} /></label>
+        <button className="btn sm pri" disabled={!blockCheck.ok} onClick={() => { if (blockCheck.ok) { putClinic({ blockNames: [...blocks, blockCheck.name] }); setNewBlock(''); } }}>Добавить</button>
+      </div>
+    </section>
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="h">Местные анестетики</div>
+      <div className="g" style={{ gap: 8 }}>
+        {anests.map((a, i) => <div key={a.name} className="row" style={{ gap: 8, alignItems: 'flex-end' }}>
+          <div style={{ flex: 1 }} className="muted">{a.name}</div>
+          <label className="field" style={{ width: 140 }}><span className="fl">макс. мг/кг</span>
+            <input inputMode="decimal" value={a.maxMgKg == null ? '' : String(a.maxMgKg).replace('.', ',')}
+              placeholder="не задан"
+              onChange={e => {
+                const raw = e.target.value.trim();
+                const n = raw === '' ? null : parseNum(raw);
+                const next = anests.map((x, j) => j === i ? { ...x, maxMgKg: n } : x);
+                putClinic({ localAnesthetics: next });
+              }} /></label>
+          <button className="x" aria-label={`Убрать ${a.name}`} onClick={() => putClinic({ localAnesthetics: anests.filter((_, j) => j !== i) })}>✕</button>
+        </div>)}
+      </div>
+      <div className="row" style={{ marginTop: 10 }}>
+        <label className="field" style={{ flex: 1 }}><span className="fl">Новый анестетик</span>
+          <input value={newAnest} placeholder="название" onChange={e => setNewAnest(e.target.value)} /></label>
+        <button className="btn sm pri" disabled={!anestCheck.ok} onClick={() => { if (anestCheck.ok) { putClinic({ localAnesthetics: [...anests, { name: anestCheck.name, maxMgKg: null }] }); setNewAnest(''); } }}>Добавить</button>
+      </div>
+      <div className="muted small">Стартовый набор: бупивакаин, лидокаин, ропивакаин. Максимальная доза пустая, пока клиника её не укажет. Тогда при превышении суммы по карте появится оранжевый флаг, сохранение не блокируется.</div>
     </section>
   </>;
 }

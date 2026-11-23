@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect } from 'vitest';
-import { ChartDB, saveWithAudit, seed, newCase, softDelete, addBreed, addDrugToFormulary, STARTER_BREEDS, CLINIC_SETTINGS_ID, LOCAL_SETTINGS_ID, upsertVitalTick, valuesToTickPatch, getLocalSettings } from './db';
+import { ChartDB, saveWithAudit, seed, newCase, softDelete, addBreed, addDrugToFormulary, STARTER_BREEDS, CLINIC_SETTINGS_ID, LOCAL_SETTINGS_ID, upsertVitalTick, valuesToTickPatch, getLocalSettings, ensureRegionalDefaults, clinicBlockNames, clinicLocalAnesthetics, meta } from './db';
 import { PRESET_UMEC12_ID, PRESET_WATO_ID } from '../core/devices';
 
 describe('db', () => {
@@ -18,6 +18,19 @@ describe('db', () => {
     const s = await d.clinicSettings.get(CLINIC_SETTINGS_ID);
     expect(s?.examLabLimitsApprovedBy).toBe('');
     expect(s?.examLabLimitsApprovedAt).toBeNull();
+    expect(clinicBlockNames(s)).toEqual([]);
+    expect(clinicLocalAnesthetics(s).map(x => x.name)).toEqual(['Бупивакаин', 'Лидокаин', 'Ропивакаин']);
+    expect(clinicLocalAnesthetics(s).every(x => x.maxMgKg == null)).toBe(true);
+  });
+  it('старая клиника без справочника местных анестетиков получает стартовый набор один раз', async () => {
+    const d = new ChartDB('t-reg-old');
+    await d.clinicSettings.add({ ...meta(), id: CLINIC_SETTINGS_ID, examLabLimitsApprovedBy: '', examLabLimitsApprovedAt: null });
+    await ensureRegionalDefaults(d);
+    const s = await d.clinicSettings.get(CLINIC_SETTINGS_ID);
+    expect(clinicLocalAnesthetics(s).map(x => x.name)).toEqual(['Бупивакаин', 'Лидокаин', 'Ропивакаин']);
+    await d.clinicSettings.put({ ...s!, localAnesthetics: [] });
+    await ensureRegionalDefaults(d);
+    expect(clinicLocalAnesthetics(await d.clinicSettings.get(CLINIC_SETTINGS_ID))).toEqual([]);
   });
   it('правка пишет историю и поднимает version', async () => {
     const d = new ChartDB('t2'); const c = newCase();

@@ -6,6 +6,8 @@ import { DEFAULT_INFUSION_RATE_UNITS, infusionRateUnitsOf } from '../core/infusi
 import type { DefaultGasSetting, GasId } from '../core/gas';
 import { normalizeDefaultGas } from '../core/gas';
 import { DEFAULT_REMINDER_INTERVAL_MIN, normalizeReminderInterval } from '../core/reminder';
+import { DEFAULT_LOCAL_ANESTHETICS, type BlockGuidance, type BlockSide, type LocalAnestheticCat } from '../core/regional';
+import { blockNamesOf as regionalBlockNamesOf, localAnestheticsOf as regionalLocalAnestheticsOf } from '../core/regional';
 import { PRESET_DEVICES, PRESET_UMEC12_ID, PRESET_WATO_ID, type DeviceType, type FieldRegion } from '../core/devices';
 import { findTickAtMinute, type ParsedValue } from '../core/vision';
 
@@ -77,6 +79,16 @@ export interface ClinicSettings extends Syncable {
   defaultGas?: DefaultGasSetting;
   /** Подписи единиц скорости инфузий. Пустой список = стандартный набор единиц, не дозы. */
   infusionRateUnits?: string[];
+  /** Названия блокад. Изначально пустой — клиника заполняет сама. */
+  blockNames?: string[];
+  /** Местные анестетики. Если поле ещё не задавалось, при первом запуске подставляются бупивакаин, лидокаин, ропивакаин без максимумов. */
+  localAnesthetics?: LocalAnestheticCat[];
+}
+export function clinicBlockNames(s: ClinicSettings | undefined | null): string[] {
+  return regionalBlockNamesOf(s?.blockNames);
+}
+export function clinicLocalAnesthetics(s: ClinicSettings | undefined | null): LocalAnestheticCat[] {
+  return regionalLocalAnestheticsOf(s?.localAnesthetics);
 }
 export function defaultGasOf(s: ClinicSettings | undefined | null): DefaultGasSetting {
   return normalizeDefaultGas(s?.defaultGas);
@@ -157,6 +169,23 @@ export interface Infusion extends Syncable {
   endedAt?: string | null;
   note?: string;
 }
+export interface RegionalAnestheticLine {
+  name: string;
+  drugId?: string | null;
+  concentrationPct: string;
+  volumeMl: string;
+}
+export interface RegionalBlock extends Syncable {
+  caseId: string;
+  at: string;
+  phase?: DrugPhase | '';
+  blockName: string;
+  side: BlockSide;
+  anesthetics: RegionalAnestheticLine[];
+  adjuvant?: string;
+  guidance: BlockGuidance;
+  note?: string;
+}
 export interface EventRec extends Syncable { caseId: string; number: number; at: string; text: string }
 export interface AlarmRec extends Syncable { caseId: string; at: string; parameter: VitalParam; value: number; message: string; acknowledgedAt?: string | null }
 
@@ -167,6 +196,7 @@ export class ChartDB extends Dexie {
   events!: Table<EventRec, string>; alarms!: Table<AlarmRec, string>;
   breeds!: Table<Breed, string>; examLabLimits!: Table<ExamLabLimitRec, string>; clinicSettings!: Table<ClinicSettings, string>;
   devices!: Table<DeviceRec, string>; localSettings!: Table<LocalSettings, string>;
+  regionalBlocks!: Table<RegionalBlock, string>;
   constructor(name = 'anesthesia-chart') {
     super(name);
     this.version(1).stores({
@@ -203,6 +233,21 @@ export class ChartDB extends Dexie {
       clinicSettings: 'id',
       devices: 'id, type, name, syncState, deletedAt',
       localSettings: 'id',
+    });
+    this.version(4).stores({
+      cases: 'id, updatedAt, date, syncState, deletedAt',
+      drugs: 'id, name, syncState, deletedAt',
+      thresholds: 'id, [species+parameter], syncState',
+      weightRules: 'id, &species, syncState',
+      audit: 'id, caseId, entityId, changedAt',
+      drugAdmins: 'id, caseId, phase, syncState', vitals: 'id, caseId, at, syncState',
+      infusions: 'id, caseId, syncState', events: 'id, caseId, at, syncState', alarms: 'id, caseId, at, syncState',
+      breeds: 'id, species, name, syncState, deletedAt',
+      examLabLimits: 'id, [species+parameter], syncState',
+      clinicSettings: 'id',
+      devices: 'id, type, name, syncState, deletedAt',
+      localSettings: 'id',
+      regionalBlocks: 'id, caseId, syncState',
     });
   }
 }
@@ -261,11 +306,22 @@ export async function seed(database: ChartDB = db) {
     await database.examLabLimits.bulkAdd((['dog', 'cat'] as Species[]).flatMap(species =>
       EXAM_LAB_PARAMS.map(p => ({ ...meta(), species, parameter: p.key, low: null, high: null }))));
   if (!(await database.clinicSettings.get(CLINIC_SETTINGS_ID)))
-    await database.clinicSettings.add({ ...meta(), id: CLINIC_SETTINGS_ID, examLabLimitsApprovedBy: '', examLabLimitsApprovedAt: null });
+    await database.clinicSettings.add({
+      ...meta(), id: CLINIC_SETTINGS_ID, examLabLimitsApprovedBy: '', examLabLimitsApprovedAt: null,
+      blockNames: [], localAnesthetics: DEFAULT_LOCAL_ANESTHETICS.map(x => ({ ...x })),
+    });
+  await ensureRegionalDefaults(database);
   await seedDevices(database);
   await ensurePresetRegions(database);
   if (!(await database.localSettings.get(LOCAL_SETTINGS_ID)))
     await database.localSettings.add(defaultLocalSettings());
+}
+
+/** Если справочник местных анестетиков ещё не создавался — три стартовых без максимумов. Удалённые клиника не восстанавливает. Названия блокад не заполняем. */
+export async function ensureRegionalDefaults(database: ChartDB = db) {
+  const s = await database.clinicSettings.get(CLINIC_SETTINGS_ID);
+  if (!s || s.localAnesthetics !== undefined) return;
+  await database.clinicSettings.put({ ...s, localAnesthetics: DEFAULT_LOCAL_ANESTHETICS.map(x => ({ ...x })) });
 }
 
 /** Предустановленные uMEC12 и WATO, если их ещё нет (удалённые пользователем не воскрешаем). */

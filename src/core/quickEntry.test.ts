@@ -4,6 +4,7 @@ import {
   emptyDraft, entryDraftToPatch, entryFieldByKey, entryFieldOrder,
   formatPrevious, isEntryOutOfRange, machineEntryKeys, monitorEntryKeys,
   previousTick, previousValueForKey, syncDraftMap, withGasField,
+  carryPreviousIntoDraft, effectiveFieldValue,
 } from './quickEntry';
 import { MONITOR_FIELDS, MACHINE_FIELDS } from './devices';
 
@@ -193,5 +194,43 @@ describe('один газ в минуте', () => {
     expect(iso.map(f => f.key)).toContain('isoPct');
     expect(iso.map(f => f.key)).not.toContain('sevoPct');
     expect(iso.map(f => f.key).filter(k => k !== 'isoPct')).toEqual(sevo.map(f => f.key).filter(k => k !== 'sevoPct'));
+  });
+});
+
+describe('carry previous on Next', () => {
+  const fields = [entryFieldByKey('hr')!, entryFieldByKey('spo2')!, entryFieldByKey('etco2')!];
+  const prev = { hr: 90, spo2: 98, etco2: 40 };
+
+  it('нетронутые поля получают прошлое, введённые сохраняются, очищенные не переносятся', () => {
+    const draft = { hr: '', spo2: '96', etco2: '' };
+    const touch = { hr: 'untouched' as const, spo2: 'edited' as const, etco2: 'cleared' as const };
+    const carried = carryPreviousIntoDraft(draft, fields, prev, touch);
+    expect(carried).toEqual({ hr: '90', spo2: '96', etco2: '' });
+    const patch = entryDraftToPatch(draft, fields, { previous: prev, touch });
+    expect(patch).toMatchObject({ hr: 90, spo2: 96 });
+    expect(patch.etco2).toBeUndefined();
+  });
+
+  it('нет прошлого — пустые поля остаются пустыми', () => {
+    const draft = emptyDraft(fields);
+    expect(carryPreviousIntoDraft(draft, fields, null, {})).toEqual(draft);
+    expect(entryDraftToPatch(draft, fields, { previous: null, touch: {} })).toEqual({});
+  });
+
+  it('effectiveFieldValue: плейсхолдер прошлого, очистка, правка', () => {
+    expect(effectiveFieldValue({ hr: '' }, 'hr', { hr: 90 }, 'untouched')).toBe('90');
+    expect(effectiveFieldValue({ hr: '' }, 'hr', { hr: 90 }, 'cleared')).toBe('');
+    expect(effectiveFieldValue({ hr: '88' }, 'hr', { hr: 90 }, 'edited')).toBe('88');
+    expect(effectiveFieldValue({ hr: '' }, 'hr', null, 'untouched')).toBe('');
+  });
+
+  it('МАД пересчитывается из итоговых САД и ДАД, даже если прошлое МАД было другим', () => {
+    const bp = [entryFieldByKey('nibpSys')!, entryFieldByKey('nibpDia')!, entryFieldByKey('nibpMap')!];
+    const patch = entryDraftToPatch(
+      { nibpSys: '', nibpDia: '', nibpMap: '' },
+      bp,
+      { previous: { sys: 110, dia: 70, map: 85, mapManual: true }, touch: {}, mapManual: false },
+    );
+    expect(patch).toMatchObject({ sys: 110, dia: 70, map: 83, mapManual: false });
   });
 });
