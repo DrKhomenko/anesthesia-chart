@@ -5,6 +5,7 @@ import { PARAM_RU, PARAMS, parseNum, fmt, EXAM_LAB_PARAMS, type ConcUnit, type D
 import { go, type SaveState } from './App';
 import { EquipmentSection } from './EquipmentSection';
 import { RecognitionSection } from './RecognitionSection';
+import { RecoverySettingsSection } from './RecoverySettingsSection';
 
 const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь', 'ингаляционно'];
 const CONC: Record<ConcUnit, string> = { 'mg/ml': 'мг/мл', 'mcg/ml': 'мкг/мл', percent: '%' };
@@ -138,6 +139,7 @@ export function SettingsScreen({ onSaved }: { onSaved: (s: SaveState) => void })
     </div>)}
     <div className="muted small">Пусто = «не настроено»: в шапке карты значение не блокируется, только подписывается. Лимит веса здесь — клинический; отдельно выше задаются рамки для ловли опечаток.</div>
   </section>
+  <RecoverySettingsSection onSaved={fn => void save(fn)} />
   <EquipmentSection onSaved={fn => void save(fn)} />
   <RecognitionSection onSaved={fn => void save(fn)} />
   </div>

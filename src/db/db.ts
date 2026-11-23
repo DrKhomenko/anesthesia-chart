@@ -32,6 +32,21 @@ export interface CaseRec extends Syncable {
   meds24h: Med24h[]; meds24hNone: boolean; preopLabs: PreopLabs; baselineVitals: BaselineVitals;
   preInductionVitals?: PreInductionVitals; premedNotes?: string;
   anesthesiaStartAt?: string | null; anesthesiaEndAt?: string | null; stage: Stage; isLocked: boolean;
+  surgeryStartAt?: string | null; surgeryEndAt?: string | null;
+  induction?: InductionData; recovery?: RecoveryData;
+}
+export type YesNo = '' | 'yes' | 'no';
+export interface InductionData {
+  maskInduction?: YesNo; ettSizeMm?: string; cuff?: YesNo; cuffNote?: string; attempts?: string; intubatedAt?: string;
+  intubationComplications?: string; lidocaineSpray?: YesNo; connectedAt?: string;
+  ventMode?: string; pinsp?: string; vt?: string; rr?: string; peep?: string;
+  gas?: '' | 'sevo' | 'iso'; gasPct?: string; o2Flow?: string; notes?: string;
+}
+export interface RecoveryData {
+  extubatedAt?: string; quality?: number | null; tempAtExtubation?: string;
+  complications?: string[]; otherComplication?: string;
+  transferTo?: '' | 'ward' | 'icu' | 'home'; transferAt?: string; notes?: string;
+  signedBy?: string; signedAt?: string | null;
 }
 export type RouteRu = 'в/в' | 'в/м' | 'п/к' | 'внутрь' | 'ингаляционно';
 export interface Drug extends Syncable {
@@ -46,6 +61,20 @@ export interface ExamLabLimitRec extends Syncable { species: Species; parameter:
 export const CLINIC_SETTINGS_ID = 'clinic';
 export interface ClinicSettings extends Syncable {
   examLabLimitsApprovedBy: string; examLabLimitsApprovedAt: string | null;
+  clinicName?: string;
+  /** Список осложнений пробуждения — только подписи, редактирует клиника. */
+  complicationLabels?: string[];
+  /** Подписи шкалы качества пробуждения 1–5; пустая подпись = только цифра. */
+  recoveryScaleLabels?: string[];
+}
+export const DEFAULT_CLINIC_NAME = 'Крымский ветеринарный госпиталь';
+export const DEFAULT_COMPLICATION_LABELS = ['рвота', 'апноэ', 'возбуждение', 'гипотермия'];
+export function complicationLabelsOf(s: ClinicSettings | undefined | null): string[] {
+  return Array.isArray(s?.complicationLabels) ? s!.complicationLabels!.filter(x => typeof x === 'string' && x.trim()) : [...DEFAULT_COMPLICATION_LABELS];
+}
+export function recoveryScaleOf(s: ClinicSettings | undefined | null): string[] {
+  const src = Array.isArray(s?.recoveryScaleLabels) ? s!.recoveryScaleLabels! : [];
+  return [0, 1, 2, 3, 4].map(i => (src[i] ?? '').trim());
 }
 export interface DeviceRec extends Syncable {
   type: DeviceType; name: string; fieldKeys: string[];
@@ -64,6 +93,9 @@ export interface LocalSettings {
   storePhotoThumbnail: boolean;
   activeMonitorId: string | null;
   activeMachineId: string | null;
+  /** Синхронизация (по умолчанию выключена). Всё хранится только на этом устройстве. */
+  syncEnabled?: boolean; syncUrl?: string; syncAnonKey?: string; syncEmail?: string;
+  syncRefreshToken?: string; syncLastPulledAt?: string | null; syncLastOkAt?: string | null; syncLastError?: string | null;
 }
 export function defaultLocalSettings(): LocalSettings {
   return {
@@ -251,10 +283,10 @@ export function recalcAdmin(row: DrugAdmin, weightKg: string): DrugAdmin {
   return { ...row, weightKgUsed: weightKg, totalMg, volumeMl };
 }
 
-export function newDrugAdmin(c: CaseRec, d: Drug, opts: { repeatOfId?: string | null; givenAt?: string } = {}): DrugAdmin {
+export function newDrugAdmin(c: CaseRec, d: Drug, opts: { repeatOfId?: string | null; givenAt?: string; phase?: DrugPhase } = {}): DrugAdmin {
   const row: DrugAdmin = {
     ...meta(), caseId: c.id, drugId: d.id, drugNameSnapshot: d.name, genericNameSnapshot: d.genericName,
-    phase: 'premed', doseValue: '', doseUnit: d.doseUnit, weightKgUsed: c.weightKg,
+    phase: opts.phase ?? 'premed', doseValue: '', doseUnit: d.doseUnit, weightKgUsed: c.weightKg,
     concentration: d.defaultConcentration, concentrationUnit: d.concentrationUnit,
     totalMg: null, volumeMl: null, manualOverride: false, overrideReason: null,
     route: d.defaultRoutes[0] ?? 'в/в', givenAt: opts.givenAt ?? now(), givenBy: c.anesthesiologist || c.anesthetist || '',

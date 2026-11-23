@@ -326,6 +326,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     <button className="btn pri" onClick={openQuickEntry}>+ Запись</button>
     <button className="btn photo" disabled={!!busy} onClick={() => fileMon.current?.click()}>📷 Монитор</button>
     <button className="btn photo" disabled={!!busy} onClick={() => fileNda.current?.click()}>📷 НДА</button>
+    <button className="btn sec" onClick={() => { if (['header', 'premed', 'induction', 'maintenance'].includes(c.stage)) update({ stage: 'recovery' }); go(`/case/${c.id}/recovery`); }}>Пробуждение →</button>
   </div>
   <input ref={fileMon} type="file" accept="image/*" capture="environment" hidden
     onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; void onFile('monitor', f); }} />

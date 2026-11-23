@@ -331,3 +331,31 @@ table.vtable tbody tr.on td:last-child{border-radius:0 10px 10px 0}
   .qe-nav{margin-top:8px}
   .qe-hint{margin-bottom:4px}
 }
+.dur{display:flex;flex-direction:column;align-items:flex-end;font-size:14px;color:var(--cyan);white-space:nowrap;line-height:1.25}
+@media (max-width:600px){.dur{font-size:12px}}
+/* ---- печать / PDF ---- */
+.pdoc{background:#fff;color:#000;min-height:100%;padding:16px;font-size:11pt;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif}
+.pdoc-bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.pdoc-bar .btn{color:#fff}
+.pdoc-hint{color:#555;font-size:10pt}
+.pdoc-page{max-width:190mm;margin:0 auto}
+.pdoc h1{font-size:15pt;margin-bottom:2px}
+.pdoc h2{font-size:11.5pt;margin:10px 0 4px;border-bottom:1.5px solid #000;padding-bottom:2px}
+.pdoc .psub{color:#333;font-size:10pt}
+.pdoc table{width:100%;border-collapse:collapse;font-size:9.5pt}
+.pdoc th,.pdoc td{border:1px solid #999;padding:2px 4px;text-align:left;vertical-align:top}
+.pdoc th{background:#eee;font-weight:600}
+.pdoc td.n{text-align:right;font-variant-numeric:tabular-nums}
+.pdoc .kv{display:grid;grid-template-columns:repeat(3,1fr);gap:2px 12px;font-size:10pt}
+.pdoc .kv div span{color:#555}
+.pdoc .avoid{break-inside:avoid;page-break-inside:avoid}
+.pdoc svg{width:100%;height:auto;display:block}
+.pdoc .sign{margin-top:14px;display:flex;justify-content:space-between;font-size:10pt}
+@media print{
+  @page{size:A4;margin:10mm}
+  html,body,#root{background:#fff!important;color:#000!important;height:auto!important}
+  .noprint{display:none!important}
+  .pdoc{padding:0}
+  .pdoc-page{max-width:none}
+}
+@media (max-width:1280px){.top.has-dur .pill-full{display:none}.top.has-dur .pill-short{display:inline}.top.has-dur .net{display:none}}

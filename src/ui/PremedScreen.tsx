@@ -6,10 +6,10 @@ import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
 import { TimePicker, DosePicker, Field } from './pickers';
 
-const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь'];
-const CONC: Record<ConcUnit, string> = { 'mg/ml': 'мг/мл', 'mcg/ml': 'мкг/мл', percent: '%' };
-const DOSE: Record<DoseUnit, string> = { 'mg/kg': 'мг/кг', 'mcg/kg': 'мкг/кг' };
-const ROUTE_CHIP: Record<string, string> = { 'в/в': 'IV', 'в/м': 'IM', 'п/к': 'SC', 'внутрь': 'PO', 'ингаляционно': 'INH' };
+export const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь'];
+export const CONC: Record<ConcUnit, string> = { 'mg/ml': 'мг/мл', 'mcg/ml': 'мкг/мл', percent: '%' };
+export const DOSE: Record<DoseUnit, string> = { 'mg/kg': 'мг/кг', 'mcg/kg': 'мкг/кг' };
+export const ROUTE_CHIP: Record<string, string> = { 'в/в': 'IV', 'в/м': 'IM', 'п/к': 'SC', 'внутрь': 'PO', 'ингаляционно': 'INH' };
 
 export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveState) => void }) {
   const { c, update, flush } = useCaseDraft(id, onSaved);
@@ -166,7 +166,7 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
   </>;
 }
 
-function AdminRow({ a, on, onSelect }: { a: DrugAdmin; on: boolean; onSelect: () => void }) {
+export function AdminRow({ a, on, onSelect }: { a: DrugAdmin; on: boolean; onSelect: () => void }) {
   const unitDose = a.doseUnit === 'mcg/kg' ? 'мкг/кг' : 'мг/кг';
   return <button type="button" className={`prow ${on ? 'on' : ''}`} onClick={onSelect}>
     <div style={{ paddingLeft: 6 }}><div className="pn">{a.drugNameSnapshot}{a.repeatOfId ? <span className="tag" style={{ marginLeft: 6 }}>повтор</span> : null}</div>
@@ -181,7 +181,7 @@ function AdminRow({ a, on, onSelect }: { a: DrugAdmin; on: boolean; onSelect: ()
   </button>;
 }
 
-function CalcCard({ a, weightKg, onPatch }: { a: DrugAdmin; weightKg: string; onPatch: (p: Partial<DrugAdmin>, reason?: string | null) => void }) {
+export function CalcCard({ a, weightKg, onPatch }: { a: DrugAdmin; weightKg: string; onPatch: (p: Partial<DrugAdmin>, reason?: string | null) => void }) {
   const r = calcDose({ weightKg, dose: a.doseValue, doseUnit: a.doseUnit, concentration: a.concentration, concUnit: a.concentrationUnit });
   const [vol, setVol] = useState(a.volumeMl != null ? fmt(a.volumeMl) : '');
   const [reason, setReason] = useState(a.overrideReason ?? '');
@@ -216,7 +216,7 @@ function CalcCard({ a, weightKg, onPatch }: { a: DrugAdmin; weightKg: string; on
   </section>;
 }
 
-function AddDrugForm({ name, onCancel, onSaved }: { name: string; onCancel: () => void; onSaved: (d: Drug) => void }) {
+export function AddDrugForm({ name, onCancel, onSaved }: { name: string; onCancel: () => void; onSaved: (d: Drug) => void }) {
   const [f, setF] = useState({ name, genericName: '', conc: '', concUnit: 'mg/ml' as ConcUnit, doseUnit: 'mg/kg' as DoseUnit, route: 'в/в' as RouteRu, controlled: false });
   const n = parseNum(f.conc);
   const concOk = f.conc.trim() === '' || (Number.isFinite(n) && n > 0);
@@ -244,7 +244,7 @@ function AddDrugForm({ name, onCancel, onSaved }: { name: string; onCancel: () =
   </div>;
 }
 
-function ruCount(n: number, one: string, few: string, many: string) {
+export function ruCount(n: number, one: string, few: string, many: string) {
   const m10 = n % 10, m100 = n % 100;
   if (m10 === 1 && m100 !== 11) return one;
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;

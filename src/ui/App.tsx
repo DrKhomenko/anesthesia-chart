@@ -6,17 +6,23 @@ import { HeaderScreen } from './HeaderScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { PremedScreen } from './PremedScreen';
 import { MaintenanceScreen } from './MaintenanceScreen';
+import { InductionScreen } from './InductionScreen';
+import { RecoveryScreen } from './RecoveryScreen';
+import { PrintView } from './PrintView';
+import { computeTimeline, timelineSummary, timelineCompact } from '../core/timeline';
+import { useSyncLoop } from './useSync';
 
 export const STAGES: { key: Stage; ru: string }[] = [
   { key: 'header', ru: 'Шапка' }, { key: 'premed', ru: 'Премедикация' }, { key: 'induction', ru: 'Индукция' },
   { key: 'maintenance', ru: 'Поддержание' }, { key: 'recovery', ru: 'Пробуждение' }];
 const SEX_RU: Record<string, string> = { female: 'самка', male: 'самец', femaleSpayed: 'самка стер.', maleNeutered: 'самец кастр.' };
 export type SaveState = 'saving' | 'saved';
-type Route = { v: 'list' } | { v: 'settings' } | { v: 'case'; id: string; stage: Stage };
+type Route = { v: 'list' } | { v: 'settings' } | { v: 'case'; id: string; stage: Stage } | { v: 'print'; id: string };
 
 function parseHash(): Route {
   const [a, b, c] = location.hash.replace(/^#\/?/, '').split('/');
   if (a === 'settings') return { v: 'settings' };
+  if (a === 'case' && b && c === 'print') return { v: 'print', id: b };
   if (a === 'case' && b) return { v: 'case', id: b, stage: (c as Stage) || 'header' };
   return { v: 'list' };
 }
@@ -35,21 +41,26 @@ export function App() {
   const [route, setRoute] = useState<Route>(parseHash());
   const [save, setSave] = useState<SaveState>('saved');
   const online = useOnline(); const now = useClock();
+  const sync = useSyncLoop(online);
   useEffect(() => { const f = () => setRoute(parseHash()); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); }, []);
   const cur = useLiveQuery(() => (route.v === 'case' ? db.cases.get(route.id) : undefined), [route.v === 'case' ? route.id : '']);
   const stageIdx = cur ? STAGES.findIndex(s => s.key === cur.stage) : -1;
 
   const title = route.v === 'case' ? (cur ? `${cur.patientName || 'Без клички'} · ${SPECIES_RU[cur.species].toLowerCase()}` : '…') : route.v === 'settings' ? 'Настройки клиники' : 'Анестезиологические карты';
+  const tl = route.v === 'case' && cur ? computeTimeline(cur, now) : null;
+  const tlText = tl ? timelineSummary(tl) : '';
   const sub = route.v === 'case' && cur ? subtitle(cur) : 'Крымский ветеринарный госпиталь';
+  if (route.v === 'print') return <PrintView id={route.id} />;
 
   return <div className="app">
-    <div className="top">
+    <div className={`top ${tlText ? 'has-dur' : ''}`}>
       <button className="pt" style={{ textAlign: 'left' }} onClick={() => go('/')} aria-label="К списку карт"><b>{title}</b><span>{sub}</span></button>
       {route.v === 'case' ? <nav className="steps">{STAGES.map((s, i) =>
         <button key={s.key} className={s.key === route.stage ? 'on' : i < stageIdx ? 'done' : ''} onClick={() => go(`/case/${route.id}/${s.key}`)}>{s.ru}</button>)}</nav>
         : <div style={{ marginLeft: 'auto' }} />}
       <div className={`pill ${save === 'saving' ? 'wait' : 'ok'}`}><i /><span className="pill-full">{save === 'saving' ? 'Сохраняю…' : 'Сохранено на планшете'}</span><span className="pill-short">{save === 'saving' ? 'Сохраняю…' : 'Сохранено'}</span></div>
-      <div className="net">{online ? 'Сеть есть' : 'Нет сети'}</div>
+      <div className="net">{online ? 'Сеть есть' : 'Нет сети'}{sync ? ` · ${sync}` : ''}</div>
+      {tlText && <div className="dur" title="Общая шкала времени">{timelineCompact(tl!).map(x => <span key={x}>{x}</span>)}</div>}
       <div className="clock"><span>Сейчас</span><b>{hhmm(now)}</b></div>
     </div>
     {route.v === 'list' && <CaseList />}
@@ -60,7 +71,9 @@ export function App() {
         ? <PremedScreen key={route.id} id={route.id} onSaved={setSave} />
         : route.stage === 'maintenance'
           ? <MaintenanceScreen key={route.id} id={route.id} onSaved={setSave} />
-          : <Placeholder id={route.id} stage={route.stage} />)}
+          : route.stage === 'induction'
+            ? <InductionScreen key={route.id} id={route.id} onSaved={setSave} />
+            : <RecoveryScreen key={route.id} id={route.id} onSaved={setSave} />)}
   </div>;
 }
 
@@ -81,8 +94,3 @@ function CaseList() {
     <button className="btn pri" onClick={create}>+ Новая карта</button></div></>;
 }
 
-function Placeholder({ id, stage }: { id: string; stage: Stage }) {
-  const s = STAGES.find(x => x.key === stage)!;
-  return <><div className="main"><div className="ph"><b>{s.ru}</b><span className="muted">Этот экран будет в следующем шаге. Шапка, премедикация и показания поддержания уже сохраняются на планшете.</span></div></div>
-    <div className="bar"><div style={{ flex: 1 }} /><button className="btn sec" onClick={() => go(`/case/${id}/header`)}>← К шапке</button></div></>;
-}
