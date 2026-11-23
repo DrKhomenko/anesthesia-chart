@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, uuid, addBreed, type CaseRec } from '../db/db';
-import { checkWeight, checkLimit, fmt, parseNum, type Species, type ExamLabLimit } from '../core/logic';
+import { applyBpChange, checkWeight, checkLimit, fmt, parseNum, type Species, type ExamLabLimit } from '../core/logic';
 import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
 import { CatalogPick, LimitedField, TimePicker, Field } from './pickers';
@@ -27,6 +27,11 @@ export function HeaderScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
   const weightBlock = wc.state === 'invalid' || wc.state === 'empty' || (wc.state === 'warn' && !confirmed);
 
   const bv = (k: keyof CaseRec['baselineVitals']) => (v: string) => update({ baselineVitals: { ...c.baselineVitals, [k]: v, at: c.baselineVitals.at ?? new Date().toISOString() } });
+  const setBp = (field: 'sys' | 'dia' | 'map', v: string) => {
+    const next = applyBpChange(c.baselineVitals, field, v);
+    update({ baselineVitals: { ...c.baselineVitals, ...next, at: c.baselineVitals.at ?? new Date().toISOString() } });
+  };
+
   const lab = (k: keyof CaseRec['preopLabs']) => (v: string) => update({ preopLabs: { ...c.preopLabs, [k]: v } });
   const L = (label: string, param: Parameters<typeof LimitedField>[0]['param'], value: string, onChange: (v: string) => void, cls = '') =>
     <LimitedField label={label} param={param} value={value} onChange={onChange} species={c.species} limits={examLimits} cls={cls} />;
@@ -84,9 +89,10 @@ export function HeaderScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
           {L('ЧДД', 'rr', c.baselineVitals.rr ?? '', bv('rr'))}
           {L('СРК, с', 'crtSec', c.baselineVitals.crtSec ?? '', bv('crtSec'))}
           {L('SpO₂, %', 'spo2', c.baselineVitals.spo2 ?? '', bv('spo2'))}
-          {L('САД', 'sys', c.baselineVitals.sys ?? '', bv('sys'))}
-          {L('ДАД', 'dia', c.baselineVitals.dia ?? '', bv('dia'))}
-          {L('МАД', 'map', c.baselineVitals.map ?? '', bv('map'))}
+          {L('САД', 'sys', c.baselineVitals.sys ?? '', v => setBp('sys', v))}
+          {L('ДАД', 'dia', c.baselineVitals.dia ?? '', v => setBp('dia', v))}
+          <div>{L('МАД', 'map', c.baselineVitals.map ?? '', v => setBp('map', v))}
+            <div className="muted small">{c.baselineVitals.mapManual ? 'вручную' : (c.baselineVitals.sys && c.baselineVitals.dia ? 'считается из САД и ДАД' : '')}</div></div>
         </div></section>
       <section className="card"><div className="h">Анализы перед операцией
         <TimePicker label="" value={c.preopLabs.takenAt} onChange={iso => update({ preopLabs: { ...c.preopLabs, takenAt: iso } })} /></div>

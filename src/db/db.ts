@@ -1,6 +1,11 @@
 import Dexie, { type Table } from 'dexie';
 import type { Species, DoseUnit, ConcUnit, VitalParam, ExamLabParam } from '../core/logic';
-import { defaultThresholds, EXAM_LAB_PARAMS, canAddCatalogItem, normalizeCatalogName, calcDose } from '../core/logic';
+import { defaultThresholds, EXAM_LAB_PARAMS, canAddCatalogItem, normalizeCatalogName, calcDose, attachMapToPatch, fillMapOnVitals } from '../core/logic';
+import type { InfusionSegment } from '../core/infusions';
+import { DEFAULT_INFUSION_RATE_UNITS, infusionRateUnitsOf } from '../core/infusions';
+import type { DefaultGasSetting, GasId } from '../core/gas';
+import { normalizeDefaultGas } from '../core/gas';
+import { DEFAULT_REMINDER_INTERVAL_MIN, normalizeReminderInterval } from '../core/reminder';
 import { PRESET_DEVICES, PRESET_UMEC12_ID, PRESET_WATO_ID, type DeviceType, type FieldRegion } from '../core/devices';
 import { findTickAtMinute, type ParsedValue } from '../core/vision';
 
@@ -15,11 +20,11 @@ export interface PreopLabs {
 }
 export interface BaselineVitals {
   at?: string; tempC?: string; hr?: string; rr?: string; crtSec?: string;
-  spo2?: string; sys?: string; dia?: string; map?: string;
+  spo2?: string; sys?: string; dia?: string; map?: string; mapManual?: boolean;
 }
 export interface PreInductionVitals {
   at?: string; hr?: string; rr?: string; spo2?: string; tempC?: string;
-  sys?: string; dia?: string; map?: string;
+  sys?: string; dia?: string; map?: string; mapManual?: boolean;
 }
 export interface Med24h { id: string; text: string; at?: string }
 export interface CaseRec extends Syncable {
@@ -34,6 +39,8 @@ export interface CaseRec extends Syncable {
   anesthesiaStartAt?: string | null; anesthesiaEndAt?: string | null; stage: Stage; isLocked: boolean;
   surgeryStartAt?: string | null; surgeryEndAt?: string | null;
   induction?: InductionData; recovery?: RecoveryData;
+  /** Газ на поддержании, если сменили переключателем. Иначе берётся из индукции / настроек. */
+  maintenanceGas?: GasId | '' | null;
 }
 export type YesNo = '' | 'yes' | 'no';
 export interface InductionData {
@@ -66,6 +73,16 @@ export interface ClinicSettings extends Syncable {
   complicationLabels?: string[];
   /** Подписи шкалы качества пробуждения 1–5; пустая подпись = только цифра. */
   recoveryScaleLabels?: string[];
+  /** Газ по умолчанию, если на индукции не выбран: sevo / iso / спросить один раз. */
+  defaultGas?: DefaultGasSetting;
+  /** Подписи единиц скорости инфузий. Пустой список = стандартный набор единиц, не дозы. */
+  infusionRateUnits?: string[];
+}
+export function defaultGasOf(s: ClinicSettings | undefined | null): DefaultGasSetting {
+  return normalizeDefaultGas(s?.defaultGas);
+}
+export function clinicInfusionUnits(s: ClinicSettings | undefined | null): string[] {
+  return infusionRateUnitsOf(s?.infusionRateUnits);
 }
 export const DEFAULT_CLINIC_NAME = 'Крымский ветеринарный госпиталь';
 export const DEFAULT_COMPLICATION_LABELS = ['рвота', 'апноэ', 'возбуждение', 'гипотермия'];
@@ -96,6 +113,8 @@ export interface LocalSettings {
   /** Синхронизация (по умолчанию выключена). Всё хранится только на этом устройстве. */
   syncEnabled?: boolean; syncUrl?: string; syncAnonKey?: string; syncEmail?: string;
   syncRefreshToken?: string; syncLastPulledAt?: string | null; syncLastOkAt?: string | null; syncLastError?: string | null;
+  /** Напоминание внести показатели: интервал в минутах и выключатель (дублируется переключателем на экране анестезии). */
+  reminderIntervalMin?: number; reminderEnabled?: boolean;
 }
 export function defaultLocalSettings(): LocalSettings {
   return {
@@ -103,6 +122,7 @@ export function defaultLocalSettings(): LocalSettings {
     recognitionBaseUrl: '', recognitionModel: '', recognitionApiKey: '',
     recognitionFallbackModels: [],
     storePhotoThumbnail: false, activeMonitorId: PRESET_UMEC12_ID, activeMachineId: PRESET_WATO_ID,
+    reminderIntervalMin: DEFAULT_REMINDER_INTERVAL_MIN, reminderEnabled: true,
   };
 }
 export interface AuditEntry { id: string; caseId: string | null; entityType: string; entityId: string; field: string; oldValue: string | null; newValue: string | null; changedBy: string; changedAt: string; deviceId: string; reason?: string | null }
@@ -119,7 +139,7 @@ export interface DrugAdmin extends Syncable {
 export interface VitalFields {
   hr?: number | null; pr?: number | null; spo2?: number | null; etco2?: number | null; fico2?: number | null;
   rr?: number | null; t1?: number | null; t2?: number | null; tempC?: number | null;
-  sys?: number | null; dia?: number | null; map?: number | null;
+  sys?: number | null; dia?: number | null; map?: number | null; mapManual?: boolean | null;
   ventMode?: string | null; setPinsp?: number | null; setRr?: number | null; setIE?: string | null;
   setTslope?: number | null; setPeep?: number | null; pPeak?: number | null; pPlat?: number | null;
   peep?: number | null; vtInsp?: number | null; vtExp?: number | null; tidalVolume?: number | null;
@@ -129,7 +149,14 @@ export interface VitalFields {
   thumbnailMonitor?: string | null; thumbnailMachine?: string | null;
 }
 export interface VitalTick extends Syncable, VitalFields { caseId: string; at: string }
-export interface Infusion extends Syncable { caseId: string; line: number; [k: string]: unknown }
+export interface Infusion extends Syncable {
+  caseId: string; line: number;
+  drugId?: string | null;
+  solutionName: string;
+  segments: InfusionSegment[];
+  endedAt?: string | null;
+  note?: string;
+}
 export interface EventRec extends Syncable { caseId: string; number: number; at: string; text: string }
 export interface AlarmRec extends Syncable { caseId: string; at: string; parameter: VitalParam; value: number; message: string; acknowledgedAt?: string | null }
 
@@ -343,7 +370,7 @@ export function valuesToTickPatch(values: Record<string, ParsedValue>, type: Dev
   }
   if (type === 'monitor' && patch.t2 != null && patch.tempC == null) patch.tempC = typeof patch.t2 === 'number' ? patch.t2 : null;
   if (type === 'machine' && patch.vtInsp != null && patch.tidalVolume == null) patch.tidalVolume = typeof patch.vtInsp === 'number' ? patch.vtInsp : null;
-  return patch;
+  return attachMapToPatch(patch);
 }
 
 export function tickToValues(tick: VitalFields, fieldKeys: string[]): Record<string, ParsedValue> {
@@ -370,9 +397,9 @@ export async function upsertVitalTick(opts: {
     if (v != null && v !== '') (clean as Record<string, unknown>)[k] = v;
   }
   if (existing) {
-    return saveWithAudit(d.vitals, 'VitalTick', { ...existing, ...clean }, { caseId: opts.caseId, database: d, reason: opts.reason ?? null });
+    return saveWithAudit(d.vitals, 'VitalTick', fillMapOnVitals({ ...existing, ...clean }), { caseId: opts.caseId, database: d, reason: opts.reason ?? null });
   }
-  const rec: VitalTick = { ...meta(), caseId: opts.caseId, at: atIso, ...clean };
+  const rec: VitalTick = fillMapOnVitals({ ...meta(), caseId: opts.caseId, at: atIso, ...clean });
   return saveWithAudit(d.vitals, 'VitalTick', rec, { caseId: opts.caseId, database: d, reason: opts.reason ?? null });
 }
 
@@ -382,7 +409,10 @@ export async function getLocalSettings(database: ChartDB = db): Promise<LocalSet
   const fallbacks = Array.isArray((cur as Partial<LocalSettings>).recognitionFallbackModels)
     ? (cur as LocalSettings).recognitionFallbackModels.filter(x => typeof x === 'string' && x.trim())
     : [];
-  return { ...defaultLocalSettings(), ...cur, id: LOCAL_SETTINGS_ID, recognitionFallbackModels: fallbacks };
+  const merged = { ...defaultLocalSettings(), ...cur, id: LOCAL_SETTINGS_ID, recognitionFallbackModels: fallbacks };
+  merged.reminderIntervalMin = normalizeReminderInterval(merged.reminderIntervalMin);
+  merged.reminderEnabled = merged.reminderEnabled !== false;
+  return merged;
 }
 
 /** Ключ API не пишем в историю правок. */

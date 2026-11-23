@@ -359,3 +359,25 @@ table.vtable tbody tr.on td:last-child{border-radius:0 10px 10px 0}
   .pdoc-page{max-width:none}
 }
 @media (max-width:1280px){.top.has-dur .pill-full{display:none}.top.has-dur .pill-short{display:inline}.top.has-dur .net{display:none}}
+
+/* Напоминание о записи */
+.remind-flash{position:fixed;inset:0;z-index:80;pointer-events:none;background:rgba(255,159,10,.28);animation:remindFlash .9s ease-out}
+@keyframes remindFlash{0%{opacity:1}40%{opacity:.85}100%{opacity:0}}
+.remind-card.due{box-shadow:0 0 0 2px var(--orange)}
+.remind-tog{margin:0}
+.remind-banner{margin-top:12px;background:rgba(255,159,10,.16);border:1px solid rgba(255,159,10,.55);border-radius:16px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.remind-banner b{font-size:18px;display:block}
+.qe-gas{display:flex;align-items:center;gap:10px;margin:0 0 8px;flex-shrink:0}
+.qe-gas-seg{flex:0 0 auto}
+.qe-gas-seg button{min-height:40px;padding:0 14px;font-size:15px}
+
+/* Инфузии */
+.inf-row{background:var(--field);border-radius:14px;padding:12px 14px}
+.inf-row.on{box-shadow:inset 0 0 0 1px rgba(52,199,89,.45)}
+.inf-main{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.inf-rate{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.inf-actions{margin-top:8px;gap:8px;flex-wrap:wrap}
+@media (max-width:600px){
+  .remind-banner{align-items:flex-start}
+  .inf-main{flex-direction:column;align-items:flex-start;gap:2px}
+}

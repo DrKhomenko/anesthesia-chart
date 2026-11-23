@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch, type DeviceRec, type LocalSettings, type VitalTick } from '../db/db';
+import { CLINIC_SETTINGS_ID, db, defaultGasOf, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch, type DeviceRec, type LocalSettings, type VitalTick } from '../db/db';
 import { fmt, fmtTime, parseNum } from '../core/logic';
 import { emptyValues, resolveTickTime, type ParsedValue } from '../core/vision';
 import { cloudNotReadyReason, downscaleImage, isCloudRequestFailure, makeThumbnail, prepareCloudImage, recognitionProviderOf, recognizeWithFallback, warpPhoto } from './visionClient';
@@ -15,8 +15,12 @@ import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
 import { fieldsFor, type DeviceType } from '../core/devices';
 import { entryFieldOrder, previousTick } from '../core/quickEntry';
+import { formatTickGas, gasColumnLabel, resolveCaseGas } from '../core/gas';
+import { ReminderBar } from './ReminderBar';
+import { InfusionsSection } from './InfusionsSection';
 
-const COLS: { key: string; label: string; get: (t: VitalTick) => string }[] = [
+
+const BASE_COLS: { key: string; label: string; get: (t: VitalTick) => string }[] = [
   { key: 'hr', label: 'ЧСС', get: t => n(t.hr) },
   { key: 'spo2', label: 'SpO₂', get: t => n(t.spo2) },
   { key: 'etco2', label: 'EtCO₂', get: t => n(t.etco2) },
@@ -25,8 +29,6 @@ const COLS: { key: string; label: string; get: (t: VitalTick) => string }[] = [
   { key: 'ventMode', label: 'Режим', get: t => t.ventMode || '—' },
   { key: 'vtInsp', label: 'VT', get: t => n(t.vtInsp) },
   { key: 'fio2', label: 'FiO₂', get: t => n(t.fio2) },
-  { key: 'sevo', label: 'Sevo', get: t => n(t.sevoPct, 1) },
-  { key: 'iso', label: 'Iso', get: t => n(t.isoPct, 1) },
 ];
 function n(v: number | null | undefined, d = 0): string { return v == null ? '—' : fmt(v, d); }
 function bp(t: VitalTick): string {
@@ -41,6 +43,8 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     return rows.sort((a, b) => a.at.localeCompare(b.at));
   }, [id]) ?? [];
   const devices = useLiveQuery(() => db.devices.filter(d => !d.deletedAt && d.isActive).toArray(), []) ?? [];
+  const clinic = useLiveQuery(() => db.clinicSettings.get(CLINIC_SETTINGS_ID), []);
+
   const [loc, setLoc] = useState<LocalSettings | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
   const [busy, setBusy] = useState<'monitor' | 'machine' | null>(null);
@@ -77,6 +81,8 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
   }, [ticks, selId]);
 
   if (!c) return <div className="main muted">Загрузка…</div>;
+  const gas = resolveCaseGas({ maintenanceGas: c.maintenanceGas, inductionGas: c.induction?.gas, defaultGas: defaultGasOf(clinic) });
+  const cols = [...BASE_COLS, { key: 'gas', label: gasColumnLabel(ticks, gas), get: (tick: VitalTick) => formatTickGas(tick, fmt) }];
   const selected = ticks.find(t => t.id === selId) ?? ticks[ticks.length - 1] ?? null;
   const pickDevice = (type: DeviceType): DeviceRec | undefined => {
     const id = type === 'monitor' ? loc?.activeMonitorId : loc?.activeMachineId;
@@ -249,6 +255,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     const fields = entryFieldOrder({
       monitorFieldKeys: mon?.fieldKeys ?? null,
       machineFieldKeys: mach?.fieldKeys ?? null,
+      gas,
     });
     const prev = previousTick(ticks, merge.at.toISOString());
     setQuick({
@@ -256,6 +263,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
       fields,
       previous: prev ?? null,
       mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
+      gas,
     });
   };
 
@@ -269,6 +277,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
   };
 
   return <><div className="main"><div className="g">
+    <ReminderBar c={c} ticks={ticks} onAddEntry={openQuickEntry} />
     {banner && <div className="warn">{banner}</div>}
     {busy && <div className="note">Распознаю снимок {busy === 'monitor' ? 'монитора' : 'НДА'}…</div>}
     <section className="card">
@@ -276,10 +285,10 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
         <span className="r">{ticks.length ? `${ticks.length} запис.` : 'пока пусто'}</span></div>
       {ticks.length === 0 && <div className="note">Нажмите «+ Запись», чтобы ввести минуту с клавиатуры. Можно снять монитор или НДА — цифры всё равно нужно подтвердить. Sevo и Iso вводятся вручную: модуля газов нет.</div>}
       {ticks.length > 0 && <div className="vtable-wrap"><table className="vtable">
-        <thead><tr><th>Время</th>{COLS.map(c => <th key={c.key}>{c.label}</th>)}</tr></thead>
+        <thead><tr><th>Время</th>{cols.map(col => <th key={col.key}>{col.label}</th>)}</tr></thead>
         <tbody>{ticks.map(t => <tr key={t.id} className={t.id === selected?.id ? 'on' : ''} onClick={() => setSelId(t.id)}>
           <td className="l">{fmtTime(new Date(t.at))}</td>
-          {COLS.map(c => <td key={c.key}>{c.get(t)}</td>)}
+          {cols.map(col => <td key={col.key}>{col.get(t)}</td>)}
         </tr>)}</tbody>
       </table></div>}
     </section>
@@ -308,17 +317,21 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
         <div className="field"><span className="fl">ЧД</span><span className="tpval">{n(selected.rr ?? selected.rrMeas)}</span></div>
       </div>
       <div className="g g2" style={{ marginTop: 14 }}>
-        <Field label="Sevo, %" value={selected.sevoPct == null ? '' : fmt(selected.sevoPct, 2)} num
-          onChange={v => { const n0 = parseNum(v); patchTick({ sevoPct: v.trim() === '' ? null : Number.isFinite(n0) ? n0 : selected.sevoPct }); }} />
-        <Field label="Iso, %" value={selected.isoPct == null ? '' : fmt(selected.isoPct, 2)} num
-          onChange={v => { const n0 = parseNum(v); patchTick({ isoPct: v.trim() === '' ? null : Number.isFinite(n0) ? n0 : selected.isoPct }); }} />
+        {(gas !== 'iso') && <Field label="Sevo, %" value={selected.sevoPct == null ? '' : fmt(selected.sevoPct, 2)} num
+          onChange={v => { const n0 = parseNum(v); patchTick({ sevoPct: v.trim() === '' ? null : Number.isFinite(n0) ? n0 : selected.sevoPct }); }} />}
+        {(gas !== 'sevo') && <Field label="Iso, %" value={selected.isoPct == null ? '' : fmt(selected.isoPct, 2)} num
+          onChange={v => { const n0 = parseNum(v); patchTick({ isoPct: v.trim() === '' ? null : Number.isFinite(n0) ? n0 : selected.isoPct }); }} />}
       </div>
+      {gas === 'sevo' && selected.isoPct != null && <div className="muted small" style={{ marginTop: 6 }}>В этой минуте также Iso {fmt(selected.isoPct, 1)}% — запись сохранена.</div>}
+      {gas === 'iso' && selected.sevoPct != null && <div className="muted small" style={{ marginTop: 6 }}>В этой минуте также Sevo {fmt(selected.sevoPct, 1)}% — запись сохранена.</div>}
+      {selected.mapManual && <div className="muted small" style={{ marginTop: 6 }}>МАД внесено вручную.</div>}
       <div className="muted small" style={{ marginTop: 8 }}>
         {pickDevice('monitor') ? `Монитор: ${pickDevice('monitor')!.name}` : 'Монитор не выбран'}
         {' · '}
         {pickDevice('machine') ? `НДА: ${pickDevice('machine')!.name}` : 'НДА не выбран'}
       </div>
     </section>}
+    <InfusionsSection c={c} onSaved={onSaved} />
   </div></div>
   <div className="bar">
     <button className="btn sec" onClick={() => go(`/case/${c.id}/induction`)}>← К индукции</button>
@@ -334,6 +347,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; void onFile('machine', f); }} />
   {align && <ScreenAlign src={align.dataUrl} initialQuad={align.initialQuad} onCancel={() => setAlign(null)} onConfirm={q => void afterAlign(q)} />}
   {confirm && <ConfirmReading state={confirm} onCancel={() => setConfirm(null)} onConfirm={(v, at) => void confirmSave(v, at)} />}
-  {quick && <QuickEntrySheet state={quick} onCancel={() => setQuick(null)} onConfirm={(p, at) => void saveQuickEntry(p, at)} />}
+  {quick && <QuickEntrySheet state={quick} onCancel={() => setQuick(null)} onConfirm={(p, at) => void saveQuickEntry(p, at)}
+    onGasChange={g => { update({ maintenanceGas: g }); setQuick(s => s ? { ...s, gas: g } : s); }} />}
   </>;
 }

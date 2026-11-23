@@ -21,6 +21,59 @@ export function fmt(n: number, digits = 2): string {
   return String(r).replace('.', ',');
 }
 
+/** Среднее АД: (САД + 2×ДАД)/3, до целого. Оба значения обязательны, иначе null. */
+export function calcMap(sys: string | number | null | undefined, dia: string | number | null | undefined): number | null {
+  const s = parseNum(sys);
+  const d = parseNum(dia);
+  if (!Number.isFinite(s) || !Number.isFinite(d)) return null;
+  return Math.round((s + 2 * d) / 3);
+}
+
+export type BpFields = { sys?: string; dia?: string; map?: string; mapManual?: boolean };
+
+/** Правка САД/ДАД подставляет расчёт, пока МАД не переписали вручную. Очистка МАД возвращает авто. */
+export function applyBpChange(prev: BpFields, field: 'sys' | 'dia' | 'map', value: string): BpFields {
+  const next: BpFields = { ...prev, [field]: value };
+  if (field === 'map') {
+    if (value.trim() === '') {
+      next.mapManual = false;
+      const m = calcMap(next.sys, next.dia);
+      next.map = m == null ? '' : fmt(m, 0);
+    } else {
+      next.mapManual = true;
+    }
+    return next;
+  }
+  if (!next.mapManual) {
+    const m = calcMap(next.sys, next.dia);
+    next.map = m == null ? '' : fmt(m, 0);
+    next.mapManual = false;
+  }
+  return next;
+}
+
+/** На записи показателей: нет ручного МАД и есть САД+ДАД — подставить расчёт. */
+export function fillMapOnVitals<T extends { sys?: number | null; dia?: number | null; map?: number | null; mapManual?: boolean | null }>(t: T): T {
+  if (t.mapManual) return t;
+  const m = calcMap(t.sys, t.dia);
+  if (m == null) return t;
+  if (t.map == null) return { ...t, map: m, mapManual: false };
+  if (t.map === m) return { ...t, mapManual: false };
+  return t;
+}
+
+/** Для патча минуты: ручной флаг сохраняется; иначе пишем расчёт, если оба давления есть. */
+export function attachMapToPatch<T extends { sys?: number | null; dia?: number | null; map?: number | null; mapManual?: boolean | null }>(patch: T, mapManual?: boolean): T {
+  const hasBp = patch.sys != null || patch.dia != null || patch.map != null || mapManual != null || patch.mapManual != null;
+  if (!hasBp) return patch;
+  const manual = mapManual ?? !!patch.mapManual;
+  if (manual) return { ...patch, mapManual: true };
+  const m = calcMap(patch.sys, patch.dia);
+  if (m == null) return { ...patch, mapManual: false };
+  if (patch.map == null || patch.map === m) return { ...patch, map: m, mapManual: false };
+  return { ...patch, mapManual: true };
+}
+
 export type DoseResult =
   | { ok: true; totalMg: number; volumeMl: number; formula: string }
   | { ok: false; error: string };

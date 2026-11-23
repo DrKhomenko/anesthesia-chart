@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { DeviceRec } from '../db/db';
 import { fieldsFor, type DeviceType } from '../core/devices';
-import { fmt, parseNum } from '../core/logic';
+import { calcMap, fmt, parseNum } from '../core/logic';
 import { isOutOfRange, type ParsedValue } from '../core/vision';
 import { FLAG_HINT, type OcrReason } from '../core/ocr';
 import { TimePicker } from './pickers';
@@ -39,11 +39,28 @@ export function ConfirmReading({ state, onCancel, onConfirm }: {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const o: Record<string, string> = {};
     for (const f of fields) o[f.key] = toInput(state.values[f.key] ?? null);
+    const m = calcMap(o.nibpSys, o.nibpDia);
+    if (m != null && !(o.nibpMap ?? '').trim()) o.nibpMap = fmt(m, 0);
     return o;
   });
   const [at, setAt] = useState(state.at);
   const [seenOpen, setSeenOpen] = useState(false);
-  const set = (key: string, v: string) => setValues(s => ({ ...s, [key]: v }));
+  const [mapManual, setMapManual] = useState(() => {
+    const m = calcMap(state.values.nibpSys as number | null, state.values.nibpDia as number | null);
+    const given = state.values.nibpMap;
+    return given != null && given !== '' && (m == null || given !== m);
+  });
+  const set = (key: string, v: string) => {
+    if (key === 'nibpMap') setMapManual(v.trim() !== '');
+    setValues(s => {
+      const next = { ...s, [key]: v };
+      if ((key === 'nibpSys' || key === 'nibpDia') && !mapManual) {
+        const m = calcMap(key === 'nibpSys' ? v : s.nibpSys, key === 'nibpDia' ? v : s.nibpDia);
+        next.nibpMap = m == null ? '' : fmt(m, 0);
+      }
+      return next;
+    });
+  };
 
   const commit = () => {
     const out: Record<string, ParsedValue> = {};
@@ -90,6 +107,9 @@ export function ConfirmReading({ state, onCancel, onConfirm }: {
               {oor && <span className="lh w">вне рамки {f.min ?? '…'}–{f.max ?? '…'}</span>}
               {badNum && <span className="lh e">не число</span>}
               {!oor && !badNum && flagged && <span className="lh w">{FLAG_HINT[flag!] || 'проверьте'}</span>}
+              {f.key === 'nibpMap' && !oor && !badNum && (mapManual
+                ? <span className="lh">вручную</span>
+                : (values.nibpSys && values.nibpDia ? <span className="lh">считается из САД и ДАД</span> : null))}
             </label>;
           })}
         </div>

@@ -1,17 +1,55 @@
+import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
 import { TimePicker, Field } from './pickers';
 import { PhaseDrugs } from './PhaseDrugs';
 import { Seg, Labeled, Notes } from './formBits';
-import { db, CLINIC_SETTINGS_ID, complicationLabelsOf, recoveryScaleOf, type RecoveryData } from '../db/db';
+import { db, CLINIC_SETTINGS_ID, complicationLabelsOf, defaultGasOf, getLocalSettings, recoveryScaleOf, upsertVitalTick, type RecoveryData, type VitalTick } from '../db/db';
 import { computeTimeline, fmtDuration } from '../core/timeline';
 import { fmtTime } from '../core/logic';
+import { entryFieldOrder, previousTick } from '../core/quickEntry';
+import { resolveCaseGas } from '../core/gas';
+import { resolveTickTime } from '../core/vision';
+import { QuickEntrySheet, type QuickEntryState } from './QuickEntrySheet';
+import { ReminderBar } from './ReminderBar';
+import { InfusionsSection } from './InfusionsSection';
 
 export function RecoveryScreen({ id, onSaved }: { id: string; onSaved: (s: SaveState) => void }) {
   const { c, update, flush } = useCaseDraft(id, onSaved);
   const clinic = useLiveQuery(() => db.clinicSettings.get(CLINIC_SETTINGS_ID), []);
+  const ticks = useLiveQuery(async () => {
+    const rows = await db.vitals.where('caseId').equals(id).filter(t => !t.deletedAt).toArray();
+    return rows.sort((a, b) => a.at.localeCompare(b.at));
+  }, [id]) ?? [];
+  const devices = useLiveQuery(() => db.devices.filter(d => !d.deletedAt && d.isActive).toArray(), []) ?? [];
+  const [quick, setQuick] = useState<QuickEntryState | null>(null);
+  const [monitorId, setMonitorId] = useState<string | null>(null);
+  const [machineId, setMachineId] = useState<string | null>(null);
+  useEffect(() => { void getLocalSettings().then(s => { setMonitorId(s.activeMonitorId); setMachineId(s.activeMachineId); }); }, []);
   if (!c) return <div className="main muted">Загрузка…</div>;
+  const gas = resolveCaseGas({ maintenanceGas: c.maintenanceGas, inductionGas: c.induction?.gas, defaultGas: defaultGasOf(clinic) });
+  const openQuickEntry = () => {
+    const mon = devices.find(d => d.id === monitorId && d.type === 'monitor') ?? devices.find(d => d.type === 'monitor');
+    const mach = devices.find(d => d.id === machineId && d.type === 'machine') ?? devices.find(d => d.type === 'machine');
+    const merge = resolveTickTime({ deviceTimeRaw: null, now: new Date(), existingTicks: ticks, mergeWindowMin: 0 });
+    const fields = entryFieldOrder({
+      monitorFieldKeys: mon?.fieldKeys ?? null,
+      machineFieldKeys: mach?.fieldKeys ?? null,
+      gas,
+    });
+    const prev = previousTick(ticks, merge.at.toISOString());
+    setQuick({
+      at: merge.at.toISOString(), fields, previous: prev ?? null, gas,
+      mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
+    });
+  };
+  const saveQuickEntry = async (patch: Partial<VitalTick>, at: string) => {
+    onSaved('saving');
+    await upsertVitalTick({ caseId: c.id, at, patch, reason: 'ручной ввод' });
+    onSaved('saved');
+    setQuick(null);
+  };
   const r = c.recovery ?? {};
   const u = (p: Partial<RecoveryData>) => update({ recovery: { ...r, ...p } });
   const labels = complicationLabelsOf(clinic);
@@ -21,7 +59,9 @@ export function RecoveryScreen({ id, onSaved }: { id: string; onSaved: (s: SaveS
   const toggle = (x: string) => u({ complications: chosen.includes(x) ? chosen.filter(y => y !== x) : [...chosen, x] });
   const tl = computeTimeline(c);
 
-  return <><div className="main"><div className="cols cols-eq">
+  return <><div className="main">
+    <ReminderBar c={c} ticks={ticks} onAddEntry={openQuickEntry} />
+    <div className="cols cols-eq">
     <div className="g">
       <section className="card">
         <div className="h">Окончание</div>
@@ -54,6 +94,7 @@ export function RecoveryScreen({ id, onSaved }: { id: string; onSaved: (s: SaveS
     </div>
     <div className="g">
       <PhaseDrugs c={c} phase="recovery" title="Обезболивание после операции" onSaved={onSaved} emptyText="Препараты из справочника клиники, доза выбирается вручную." />
+      <InfusionsSection c={c} onSaved={onSaved} compact />
       <section className="card">
         <div className="h">Перевод</div>
         <Seg value={r.transferTo} options={[{ v: 'ward', ru: 'Стационар' }, { v: 'icu', ru: 'ОРИТ' }, { v: 'home', ru: 'Домой' }]} onChange={v => u({ transferTo: v })} />
@@ -75,7 +116,11 @@ export function RecoveryScreen({ id, onSaved }: { id: string; onSaved: (s: SaveS
   <div className="bar">
     <button className="btn sec" onClick={async () => { await flush(); go(`/case/${c.id}/maintenance`); }}>← Поддержание</button>
     <div style={{ flex: 1 }} />
+    <button className="btn pri" onClick={openQuickEntry}>+ Запись</button>
     <button className="btn sec" onClick={async () => { await flush(); go(`/case/${c.id}/print`); }}>Экспорт PDF</button>
     <button className="btn pri" onClick={async () => { update({ stage: c.stage === 'closed' ? 'recovery' : 'closed' }); await flush(); }}>{c.stage === 'closed' ? 'Открыть снова' : 'Закрыть карту'}</button>
-  </div></>;
+  </div>
+  {quick && <QuickEntrySheet state={quick} onCancel={() => setQuick(null)} onConfirm={(p, at) => void saveQuickEntry(p, at)}
+    onGasChange={g => { update({ maintenanceGas: g }); setQuick(s => s ? { ...s, gas: g } : s); }} />}
+  </>;
 }

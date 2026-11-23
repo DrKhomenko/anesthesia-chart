@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, saveWithAudit, softDelete, newDrugAdmin, addDrugToFormulary, recalcAdmin, type CaseRec, type Drug, type DrugAdmin, type RouteRu } from '../db/db';
-import { calcDose, fmt, parseNum, type DoseUnit, type ConcUnit } from '../core/logic';
+import { applyBpChange, calcDose, fmt, parseNum, type DoseUnit, type ConcUnit } from '../core/logic';
 import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
 import { TimePicker, DosePicker, Field } from './pickers';
@@ -67,6 +67,10 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
 
   const uPv = (k: keyof NonNullable<CaseRec['preInductionVitals']>) => (v: string) =>
     update({ preInductionVitals: { ...pv, [k]: v, at: pv.at ?? new Date().toISOString() } });
+  const setPvBp = (field: 'sys' | 'dia' | 'map', v: string) => {
+    const next = applyBpChange(pv, field, v);
+    update({ preInductionVitals: { ...pv, ...next, at: pv.at ?? new Date().toISOString() } });
+  };
 
   return <><div className="main"><div className="cols cols-premed">
     <div className="g">
@@ -130,9 +134,11 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
           <Field label="ЧДД" value={pv.rr ?? ''} onChange={uPv('rr')} num />
           <Field label="SpO₂, %" value={pv.spo2 ?? ''} onChange={uPv('spo2')} num />
           <Field label="T °C" value={pv.tempC ?? ''} onChange={uPv('tempC')} num />
-          <Field label="САД" value={pv.sys ?? ''} onChange={uPv('sys')} num />
-          <Field label="ДАД" value={pv.dia ?? ''} onChange={uPv('dia')} num />
-          <Field label="МАД" value={pv.map ?? ''} onChange={uPv('map')} num />
+          <Field label="САД" value={pv.sys ?? ''} onChange={v => setPvBp('sys', v)} num />
+          <Field label="ДАД" value={pv.dia ?? ''} onChange={v => setPvBp('dia', v)} num />
+          <Field label="МАД" value={pv.map ?? ''} onChange={v => setPvBp('map', v)} num>
+            {pv.mapManual ? <span className="muted small">вручную</span> : (pv.sys && pv.dia ? <span className="muted small">считается из САД и ДАД</span> : null)}
+          </Field>
         </div>
       </section>
       <section className="card">

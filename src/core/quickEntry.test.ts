@@ -3,7 +3,7 @@ import {
   DEFAULT_ENTRY_KEYS, applyKeypad, copyAllPrevious, copyPreviousValue,
   emptyDraft, entryDraftToPatch, entryFieldByKey, entryFieldOrder,
   formatPrevious, isEntryOutOfRange, machineEntryKeys, monitorEntryKeys,
-  previousTick, previousValueForKey,
+  previousTick, previousValueForKey, syncDraftMap, withGasField,
 } from './quickEntry';
 import { MONITOR_FIELDS, MACHINE_FIELDS } from './devices';
 
@@ -114,12 +114,12 @@ describe('save patch', () => {
   it('переносит АД в sys/dia/map, T в tempC и t2, VT ещё и в tidalVolume', () => {
     const draft = {
       ...emptyDraft(fields),
-      hr: '142', spo2: '98', nibpSys: '110', nibpDia: '70', nibpMap: '85',
+      hr: '142', spo2: '98', nibpSys: '110', nibpDia: '70', nibpMap: '83',
       tempC: '37,6', sevoPct: '2,5', vtInsp: '45', fio2: '72',
     };
     const patch = entryDraftToPatch(draft, fields);
     expect(patch).toMatchObject({
-      hr: 142, spo2: 98, sys: 110, dia: 70, map: 85,
+      hr: 142, spo2: 98, sys: 110, dia: 70, map: 83, mapManual: false,
       tempC: 37.6, t2: 37.6, sevoPct: 2.5, vtInsp: 45, tidalVolume: 45, fio2: 72,
     });
     expect(patch).not.toHaveProperty('nibpSys');
@@ -146,5 +146,52 @@ describe('catalog coverage', () => {
     for (const f of [...MONITOR_FIELDS, ...MACHINE_FIELDS]) {
       expect(entryFieldByKey(f.key)?.key, f.key).toBe(f.key);
     }
+  });
+});
+
+describe('auto MAP in draft', () => {
+  it('пустые САД+ДАД заполняют МАД, ручной не трогает', () => {
+    const a = syncDraftMap({ nibpSys: '110', nibpDia: '70', nibpMap: '' }, false);
+    expect(a.nibpMap).toBe('83');
+    const kept = syncDraftMap({ nibpSys: '110', nibpDia: '70', nibpMap: '85' }, true);
+    expect(kept.nibpMap).toBe('85');
+    const cleared = syncDraftMap({ nibpSys: '110', nibpDia: '', nibpMap: '83' }, false);
+    expect(cleared.nibpMap).toBe('');
+  });
+  it('патч без введённого МАД всё равно пишет расчёт; ручной сохраняет число монитора', () => {
+    const fields = [entryFieldByKey('nibpSys')!, entryFieldByKey('nibpDia')!, entryFieldByKey('nibpMap')!];
+    const auto = entryDraftToPatch({ nibpSys: '110', nibpDia: '70', nibpMap: '' }, fields, { mapManual: false });
+    expect(auto).toMatchObject({ sys: 110, dia: 70, map: 83, mapManual: false });
+    const man = entryDraftToPatch({ nibpSys: '110', nibpDia: '70', nibpMap: '85' }, fields, { mapManual: true });
+    expect(man).toMatchObject({ sys: 110, dia: 70, map: 85, mapManual: true });
+  });
+  it('рамка МАД работает на расчётном значении', () => {
+    const f = entryFieldByKey('nibpMap')!;
+    const raw = syncDraftMap({ nibpSys: '80', nibpDia: '40', nibpMap: '' }, false).nibpMap;
+    expect(raw).toBe('53');
+    // рамки поля с шаблона прибора: если заданы, флаг сработает
+    expect(isEntryOutOfRange({ ...f, min: 60, max: null }, raw)).toBe(true);
+    expect(isEntryOutOfRange({ ...f, min: 60, max: null }, '83')).toBe(false);
+  });
+});
+
+describe('один газ в минуте', () => {
+  it('по газу индукции в списке только Sevo или только Iso, оба — в режиме both', () => {
+    expect(entryFieldOrder({ gas: 'sevo' }).map(f => f.key)).toEqual([
+      'hr', 'spo2', 'etco2', 'rr', 'tempC', 'nibpSys', 'nibpDia', 'nibpMap', 'sevoPct', 'fio2', 'pPeak', 'vtInsp',
+    ]);
+    expect(entryFieldOrder({ gas: 'iso' }).map(f => f.key)).toContain('isoPct');
+    expect(entryFieldOrder({ gas: 'iso' }).map(f => f.key)).not.toContain('sevoPct');
+    expect(entryFieldOrder({ gas: null }).map(f => f.key)).not.toContain('sevoPct');
+    expect(entryFieldOrder({ gas: null }).map(f => f.key)).not.toContain('isoPct');
+    expect(entryFieldOrder().map(f => f.key)).toContain('sevoPct');
+    expect(entryFieldOrder().map(f => f.key)).toContain('isoPct');
+  });
+  it('withGasField меняет поле газа, остальные на месте', () => {
+    const sevo = entryFieldOrder({ gas: 'sevo' });
+    const iso = withGasField(sevo, 'iso');
+    expect(iso.map(f => f.key)).toContain('isoPct');
+    expect(iso.map(f => f.key)).not.toContain('sevoPct');
+    expect(iso.map(f => f.key).filter(k => k !== 'isoPct')).toEqual(sevo.map(f => f.key).filter(k => k !== 'sevoPct'));
   });
 });

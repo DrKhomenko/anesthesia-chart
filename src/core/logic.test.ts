@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNum, fmt, calcDose, checkWeight, evaluateAlarms, defaultThresholds, infusionTotalMl, generateTimeList, parseTimeInput, fmtTime, dosePresets, canAddCatalogItem, checkLimit, EXAM_LAB_PARAMS } from './logic';
+import { parseNum, fmt, calcDose, calcMap, applyBpChange, attachMapToPatch, fillMapOnVitals, checkWeight, evaluateAlarms, defaultThresholds, infusionTotalMl, generateTimeList, parseTimeInput, fmtTime, dosePresets, canAddCatalogItem, checkLimit, EXAM_LAB_PARAMS } from './logic';
 
 
 describe('fmt', () => {
@@ -14,6 +14,53 @@ describe('parseNum', () => {
   it('запятая и точка', () => { expect(parseNum('3,3')).toBe(3.3); expect(parseNum(' 3.3 ')).toBe(3.3); });
   it('мусор → NaN', () => { expect(parseNum('')).toBeNaN(); expect(parseNum('abc')).toBeNaN(); expect(parseNum('1,2,3')).toBeNaN(); });
 });
+
+describe('calcMap', () => {
+  it('(САД + 2×ДАД)/3 до целого', () => {
+    expect(calcMap(110, 70)).toBe(83); // (110+140)/3 = 83,333 → 83
+    expect(calcMap(120, 80)).toBe(93);
+    expect(calcMap('110', '70')).toBe(83);
+    expect(calcMap('120,0', '80')).toBe(93);
+    expect(calcMap(90, 60)).toBe(70);
+  });
+  it('нет одного из давлений — нет расчёта', () => {
+    expect(calcMap(110, null)).toBeNull();
+    expect(calcMap('', 70)).toBeNull();
+    expect(calcMap(undefined, 70)).toBeNull();
+    expect(calcMap('x', 70)).toBeNull();
+  });
+  it('авто подстановка и ручная перезапись', () => {
+    const a = applyBpChange({ sys: '', dia: '', map: '' }, 'sys', '110');
+    expect(a).toEqual({ sys: '110', dia: '', map: '', mapManual: false });
+    const b = applyBpChange(a, 'dia', '70');
+    expect(b.map).toBe('83');
+    expect(b.mapManual).toBe(false);
+    const man = applyBpChange(b, 'map', '85');
+    expect(man.map).toBe('85');
+    expect(man.mapManual).toBe(true);
+    const kept = applyBpChange(man, 'sys', '120');
+    expect(kept.map).toBe('85'); // ручное не пересчитываем
+    expect(kept.sys).toBe('120');
+    const back = applyBpChange(kept, 'map', '');
+    expect(back.mapManual).toBe(false);
+    expect(back.map).toBe('87'); // (120+2×70)/3
+  });
+  it('fillMapOnVitals и attachMapToPatch', () => {
+    expect(fillMapOnVitals({ sys: 110, dia: 70 })).toEqual({ sys: 110, dia: 70, map: 83, mapManual: false });
+    expect(fillMapOnVitals({ sys: 110, dia: 70, map: 85, mapManual: true })).toEqual({ sys: 110, dia: 70, map: 85, mapManual: true });
+    expect(fillMapOnVitals({ sys: 110, dia: 70, map: 83 })).toMatchObject({ map: 83, mapManual: false });
+    expect(attachMapToPatch({ sys: 110, dia: 70 })).toMatchObject({ map: 83, mapManual: false });
+    expect(attachMapToPatch({ sys: 110, dia: 70, map: 85 }, true)).toMatchObject({ map: 85, mapManual: true });
+    expect(attachMapToPatch({ sys: 110, dia: 70, map: 85 })).toMatchObject({ map: 85, mapManual: true });
+  });
+  it('флаг вне рамки срабатывает и на расчётном МАД', () => {
+    const th = defaultThresholds();
+    const map = calcMap(80, 40)!; // (80+80)/3 = 53,333 → 53
+    expect(map).toBe(53);
+    expect(evaluateAlarms('dog', { map }, th).map(a => a.message)).toEqual(['МАД 53 < 60']);
+  });
+});
+
 
 describe('calcDose', () => {
   const base = { weightKg: '3,3', dose: '25', doseUnit: 'mg/kg' as const, concentration: '100', concUnit: 'mg/ml' as const };

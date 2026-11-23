@@ -1,9 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, CLINIC_SETTINGS_ID, DEFAULT_CLINIC_NAME, recoveryScaleOf, type CaseRec, type DrugAdmin, type VitalTick } from '../db/db';
+import { db, CLINIC_SETTINGS_ID, DEFAULT_CLINIC_NAME, defaultGasOf, recoveryScaleOf, type CaseRec, type DrugAdmin, type Infusion, type VitalTick } from '../db/db';
 import { SPECIES_RU, fmt, fmtTime } from '../core/logic';
 import { computeTimeline, fmtDuration } from '../core/timeline';
 import { buildSeries, drugTotals, niceRange, type Series } from '../core/report';
 import { go } from './App';
+import { formatTickGas, gasColumnLabel, resolveCaseGas } from '../core/gas';
+import { formatVolumeMl, infusionChangesText, infusionVolumeMl, liveInfusions, startedAtOf } from '../core/infusions';
+
 
 const PHASE_RU: Record<string, string> = { premed: 'Премедикация', induction: 'Индукция', maintenance: 'Поддержание', recovery: 'Пробуждение', cpr: 'СЛР' };
 const SEX_RU: Record<string, string> = { female: 'самка', male: 'самец', femaleSpayed: 'самка стер.', maleNeutered: 'самец кастр.' };
@@ -18,7 +21,8 @@ export function PrintView({ id }: { id: string }) {
     const admins = (await db.drugAdmins.where('caseId').equals(id).toArray()).filter(a => !a.deletedAt).sort((a, b) => a.givenAt.localeCompare(b.givenAt));
     const ticks = (await db.vitals.where('caseId').equals(id).toArray()).filter(t => !t.deletedAt).sort((a, b) => a.at.localeCompare(b.at));
     const clinic = await db.clinicSettings.get(CLINIC_SETTINGS_ID);
-    return { c, admins, ticks, clinic };
+    const infusions = liveInfusions(await db.infusions.where('caseId').equals(id).toArray());
+    return { c, admins, ticks, clinic, infusions };
   }, [id]);
   if (!data) return <div className="pdoc">Загрузка…</div>;
   if (!data.c) return <div className="pdoc">Карта не найдена. <button onClick={() => go('/')}>К списку</button></div>;
@@ -28,11 +32,11 @@ export function PrintView({ id }: { id: string }) {
       <button className="btn pri" onClick={() => window.print()}>Сохранить PDF / Печать</button>
       <span className="pdoc-hint">На iPad/iPhone: «Печать» → жест «развести двумя пальцами» на превью или «Поделиться» → «Сохранить в Файлы». Работает без интернета.</span>
     </div>
-    <ChartDoc c={data.c} admins={data.admins} ticks={data.ticks} clinicName={data.clinic?.clinicName?.trim() || DEFAULT_CLINIC_NAME} scale={recoveryScaleOf(data.clinic)} />
+    <ChartDoc c={data.c} admins={data.admins} ticks={data.ticks} infusions={data.infusions} clinicName={data.clinic?.clinicName?.trim() || DEFAULT_CLINIC_NAME} scale={recoveryScaleOf(data.clinic)} defaultGas={defaultGasOf(data.clinic)} />
   </div>;
 }
 
-export function ChartDoc({ c, admins, ticks, clinicName, scale }: { c: CaseRec; admins: DrugAdmin[]; ticks: VitalTick[]; clinicName: string; scale: string[] }) {
+export function ChartDoc({ c, admins, ticks, infusions = [], clinicName, scale, defaultGas }: { c: CaseRec; admins: DrugAdmin[]; ticks: VitalTick[]; infusions?: Infusion[]; clinicName: string; scale: string[]; defaultGas?: ReturnType<typeof defaultGasOf> }) {
   const tl = computeTimeline({ ...c, firstPremedAt: admins.find(a => a.phase === 'premed')?.givenAt ?? null });
   const ind = c.induction ?? {}; const r = c.recovery ?? {};
   const pv = c.preInductionVitals ?? {}; const bv = c.baselineVitals ?? {};
@@ -103,10 +107,26 @@ export function ChartDoc({ c, admins, ticks, clinicName, scale }: { c: CaseRec; 
     </div>
     <h2>Показатели (поддержание)</h2>
     {ticks.length === 0 ? <div className="psub">Нет записей</div> :
-      <table><thead><tr><th>Время</th><th>ЧСС</th><th>SpO₂</th><th>EtCO₂</th><th>АД С/Д/Ср</th><th>T</th><th>ЧД</th><th>Режим</th><th>VT</th><th>Sevo</th><th>Iso</th></tr></thead><tbody>
+      <table><thead><tr><th>Время</th><th>ЧСС</th><th>SpO₂</th><th>EtCO₂</th><th>АД С/Д/Ср</th><th>T</th><th>ЧД</th><th>Режим</th><th>VT</th><th>{gasColumnLabel(ticks, resolveCaseGas({ maintenanceGas: c.maintenanceGas, inductionGas: c.induction?.gas, defaultGas }))}</th></tr></thead><tbody>
         {ticks.map(t => <tr key={t.id}><td>{tm(t.at)}</td><td className="n">{n(t.hr)}</td><td className="n">{n(t.spo2)}</td><td className="n">{n(t.etco2)}</td>
-          <td className="n">{t.sys == null && t.dia == null && t.map == null ? '—' : `${n(t.sys)}/${n(t.dia)}/${n(t.map)}`}</td><td className="n">{n(t.tempC ?? t.t2, 1)}</td>
-          <td className="n">{n(t.rr ?? t.rrMeas)}</td><td>{t.ventMode || '—'}</td><td className="n">{n(t.vtInsp)}</td><td className="n">{n(t.sevoPct, 1)}</td><td className="n">{n(t.isoPct, 1)}</td></tr>)}
+          <td className="n">{t.sys == null && t.dia == null && t.map == null ? '—' : `${n(t.sys)}/${n(t.dia)}/${n(t.map)}${t.mapManual ? ' вруч.' : ''}`}</td><td className="n">{n(t.tempC ?? t.t2, 1)}</td>
+          <td className="n">{n(t.rr ?? t.rrMeas)}</td><td>{t.ventMode || '—'}</td><td className="n">{n(t.vtInsp)}</td><td className="n">{formatTickGas(t, fmt)}</td></tr>)}
+      </tbody></table>}
+    <h2>Инфузии</h2>
+    {infusions.length === 0 ? <div className="psub">Нет записей</div> :
+      <table><thead><tr><th>Раствор</th><th>Начало</th><th>Скорость / изменения</th><th>Окончание</th><th>Объём, мл</th></tr></thead><tbody>
+        {infusions.map(inf => {
+          const start = startedAtOf(inf);
+          const endAt = inf.endedAt ?? c.anesthesiaEndAt ?? null;
+          const vol = infusionVolumeMl(inf, endAt ?? new Date());
+          return <tr key={inf.id}>
+            <td>{inf.solutionName || '—'}</td>
+            <td>{start ? tm(start) : '—'}</td>
+            <td>{infusionChangesText(inf, iso => tm(iso)) || '—'}</td>
+            <td>{inf.endedAt ? tm(inf.endedAt) : (c.anesthesiaEndAt ? tm(c.anesthesiaEndAt) + ' (конец анестезии)' : 'идёт')}</td>
+            <td className="n">{formatVolumeMl(vol)}</td>
+          </tr>;
+        })}
       </tbody></table>}
     <div className="avoid">
       <h2>Пробуждение</h2>

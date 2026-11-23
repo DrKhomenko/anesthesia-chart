@@ -6,6 +6,7 @@ import { go, type SaveState } from './App';
 import { EquipmentSection } from './EquipmentSection';
 import { RecognitionSection } from './RecognitionSection';
 import { RecoverySettingsSection } from './RecoverySettingsSection';
+import { AnesthesiaSettingsSection } from './AnesthesiaSettingsSection';
 import { SyncSection } from './SyncSection';
 
 const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь', 'ингаляционно'];
@@ -141,6 +142,7 @@ export function SettingsScreen({ onSaved }: { onSaved: (s: SaveState) => void })
     <div className="muted small">Пусто = «не настроено»: в шапке карты значение не блокируется, только подписывается. Лимит веса здесь — клинический; отдельно выше задаются рамки для ловли опечаток.</div>
   </section>
   <RecoverySettingsSection onSaved={fn => void save(fn)} />
+  <AnesthesiaSettingsSection onSaved={fn => void save(fn)} />
   <EquipmentSection onSaved={fn => void save(fn)} />
   <RecognitionSection onSaved={fn => void save(fn)} />
   <SyncSection />

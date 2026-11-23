@@ -1,6 +1,8 @@
 // Быстрый ручной ввод минуты. Порядок полей — из шаблонов приборов, дозы и пороги не придумываются.
 import { FIELD_BY_KEY, MACHINE_FIELDS, MONITOR_FIELDS, type DeviceField, type FieldKind } from './devices';
-import { fmt, parseNum } from './logic';
+import { attachMapToPatch, calcMap, fmt, parseNum } from './logic';
+import type { GasId } from './gas';
+import { FIELD_TO_GAS, GAS_FIELD } from './gas';
 import { isOutOfRange, type ParsedValue } from './vision';
 import type { VitalFields } from '../db/db';
 
@@ -110,10 +112,18 @@ export function machineEntryKeys(fieldKeys?: string[] | null): string[] {
 export function entryFieldOrder(opts: {
   monitorFieldKeys?: string[] | null;
   machineFieldKeys?: string[] | null;
+  /** Один газ (из индукции/настроек). null — оба не показываем, лист выберет газ. 'both' — старый режим (тесты/история). */
+  gas?: GasId | 'both' | null;
 } = {}): EntryField[] {
   const mon = new Set(monitorEntryKeys(opts.monitorFieldKeys));
   const mach = new Set(machineEntryKeys(opts.machineFieldKeys));
+  const gas = opts.gas === undefined ? 'both' : opts.gas;
   const keys = DEFAULT_ENTRY_KEYS.filter(k => {
+    if (k === 'sevoPct' || k === 'isoPct') {
+      if (gas === 'both') return true;
+      if (!gas) return false;
+      return GAS_FIELD[gas] === k;
+    }
     if ((MANUAL_ENTRY_KEYS as readonly string[]).includes(k)) return true;
     const src = entryFieldByKey(k)?.source;
     if (src === 'monitor') return mon.has(k);
@@ -121,6 +131,22 @@ export function entryFieldOrder(opts: {
     return true;
   });
   return keys.map(entryFieldByKey).filter((f): f is EntryField => !!f);
+}
+
+/** Подставить в список поле выбранного газа, убрав другой, не теряя остальные поля. */
+export function withGasField(fields: EntryField[], gas: GasId): EntryField[] {
+  const key = GAS_FIELD[gas];
+  const field = entryFieldByKey(key);
+  if (!field) return fields;
+  const without = fields.filter(f => !FIELD_TO_GAS[f.key]);
+  const idx = fields.findIndex(f => FIELD_TO_GAS[f.key]);
+  if (idx < 0) {
+    // после АД / перед FiO₂
+    const fio = without.findIndex(f => f.key === 'fio2');
+    const at = fio >= 0 ? fio : without.length;
+    return [...without.slice(0, at), field, ...without.slice(at)];
+  }
+  return [...without.slice(0, idx), field, ...without.slice(idx)];
 }
 
 export function previousValueForKey(tick: VitalFields | null | undefined, key: string): ParsedValue {
@@ -221,8 +247,17 @@ export function entryDraftToValues(draft: Record<string, string>, fields: EntryF
   return out;
 }
 
+/** Если МАД не правили вручную — подставить расчёт из САД и ДАД в черновик. */
+export function syncDraftMap(draft: Record<string, string>, mapManual: boolean): Record<string, string> {
+  if (mapManual) return draft;
+  const m = calcMap(draft.nibpSys, draft.nibpDia);
+  const next = m == null ? '' : fmt(m, 0);
+  if ((draft.nibpMap ?? '') === next) return draft;
+  return { ...draft, nibpMap: next };
+}
+
 /** Пустые поля не попадают в запись — ими ничего не затирается. */
-export function entryDraftToPatch(draft: Record<string, string>, fields: EntryField[]): Partial<VitalFields> {
+export function entryDraftToPatch(draft: Record<string, string>, fields: EntryField[], opts?: { mapManual?: boolean }): Partial<VitalFields> {
   const patch: Partial<VitalFields> = {};
   for (const f of fields) {
     const v = parseEntryValue(draft[f.key] ?? '', f);
@@ -232,7 +267,7 @@ export function entryDraftToPatch(draft: Record<string, string>, fields: EntryFi
   }
   if (patch.tempC != null && patch.t2 == null) patch.t2 = patch.tempC;
   if (patch.vtInsp != null && patch.tidalVolume == null) patch.tidalVolume = patch.vtInsp;
-  return patch;
+  return attachMapToPatch(patch, opts?.mapManual);
 }
 
 export { MACHINE_FIELDS, MONITOR_FIELDS };
