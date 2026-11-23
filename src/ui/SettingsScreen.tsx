@@ -6,6 +6,7 @@ import { go, type SaveState } from './App';
 import { EquipmentSection } from './EquipmentSection';
 import { RecognitionSection } from './RecognitionSection';
 import { RecoverySettingsSection } from './RecoverySettingsSection';
+import { SyncSection } from './SyncSection';
 
 const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь', 'ингаляционно'];
 const CONC: Record<ConcUnit, string> = { 'mg/ml': 'мг/мл', 'mcg/ml': 'мкг/мл', percent: '%' };
@@ -142,6 +143,7 @@ export function SettingsScreen({ onSaved }: { onSaved: (s: SaveState) => void })
   <RecoverySettingsSection onSaved={fn => void save(fn)} />
   <EquipmentSection onSaved={fn => void save(fn)} />
   <RecognitionSection onSaved={fn => void save(fn)} />
+  <SyncSection />
   </div>
   <div className="bar"><span className="muted">Изменения сохраняются сразу и попадают в историю правок</span><div style={{ flex: 1 }} /><button className="btn sec" onClick={() => go('/')}>Готово</button></div></>;
 }
