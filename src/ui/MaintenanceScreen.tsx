@@ -9,10 +9,12 @@ import { ScreenAlign } from './ScreenAlign';
 import type { Quad } from '../core/geom';
 import type { OcrReason } from '../core/ocr';
 import { ConfirmReading, type ConfirmState } from './ConfirmReading';
+import { QuickEntrySheet, type QuickEntryState } from './QuickEntrySheet';
 import { Field, TimePicker } from './pickers';
 import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
 import { fieldsFor, type DeviceType } from '../core/devices';
+import { entryFieldOrder, previousTick } from '../core/quickEntry';
 
 const COLS: { key: string; label: string; get: (t: VitalTick) => string }[] = [
   { key: 'hr', label: 'ЧСС', get: t => n(t.hr) },
@@ -43,6 +45,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
   const [selId, setSelId] = useState<string | null>(null);
   const [busy, setBusy] = useState<'monitor' | 'machine' | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [quick, setQuick] = useState<QuickEntryState | null>(null);
   const [align, setAlign] = useState<{ type: DeviceType; device: DeviceRec; dataUrl: string; initialQuad?: import('../core/geom').Quad } | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const previewRef = useRef<string | null>(null);
@@ -61,6 +64,12 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     if (!raw) return;
     sessionStorage.removeItem('demoAlign');
     try { setAlign(JSON.parse(raw)); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    const raw = sessionStorage.getItem('demoQuickEntry');
+    if (!raw) return;
+    sessionStorage.removeItem('demoQuickEntry');
+    try { setQuick(JSON.parse(raw) as QuickEntryState); } catch { /* ignore */ }
   }, []);
   useEffect(() => {
     if (!selId && ticks.length) setSelId(ticks[ticks.length - 1].id);
@@ -232,11 +241,31 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     void upsertVitalTick({ caseId: c.id, at: selected.at, patch: p }).then(() => onSaved('saved'));
   };
 
-  const addManualTick = () => {
+  const openQuickEntry = () => {
+    const mon = pickDevice('monitor');
+    const mach = pickDevice('machine');
     const now = new Date();
     const merge = resolveTickTime({ deviceTimeRaw: null, now, existingTicks: ticks, mergeWindowMin: 0 });
+    const fields = entryFieldOrder({
+      monitorFieldKeys: mon?.fieldKeys ?? null,
+      machineFieldKeys: mach?.fieldKeys ?? null,
+    });
+    const prev = previousTick(ticks, merge.at.toISOString());
+    setQuick({
+      at: merge.at.toISOString(),
+      fields,
+      previous: prev ?? null,
+      mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
+    });
+  };
+
+  const saveQuickEntry = async (patch: Partial<VitalTick>, at: string) => {
     onSaved('saving');
-    void upsertVitalTick({ caseId: c.id, at: merge.at, patch: {} }).then(s => { onSaved('saved'); setSelId(s.id); });
+    const saved = await upsertVitalTick({ caseId: c.id, at, patch, reason: 'ручной ввод' });
+    if (c.stage === 'header' || c.stage === 'premed' || c.stage === 'induction') update({ stage: 'maintenance' });
+    onSaved('saved');
+    setSelId(saved.id);
+    setQuick(null);
   };
 
   return <><div className="main"><div className="g">
@@ -245,7 +274,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     <section className="card">
       <div className="h">Показания
         <span className="r">{ticks.length ? `${ticks.length} запис.` : 'пока пусто'}</span></div>
-      {ticks.length === 0 && <div className="note">Снимите монитор или НДА — или добавьте минуту вручную. Подтверждённые цифры попадут на график. Sevo и Iso вводятся здесь вручную: модуля газов нет.</div>}
+      {ticks.length === 0 && <div className="note">Нажмите «+ Запись», чтобы ввести минуту с клавиатуры. Можно снять монитор или НДА — цифры всё равно нужно подтвердить. Sevo и Iso вводятся вручную: модуля газов нет.</div>}
       {ticks.length > 0 && <div className="vtable-wrap"><table className="vtable">
         <thead><tr><th>Время</th>{COLS.map(c => <th key={c.key}>{c.label}</th>)}</tr></thead>
         <tbody>{ticks.map(t => <tr key={t.id} className={t.id === selected?.id ? 'on' : ''} onClick={() => setSelId(t.id)}>
@@ -294,9 +323,9 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
   <div className="bar">
     <button className="btn sec" onClick={() => go(`/case/${c.id}/induction`)}>← К индукции</button>
     <div style={{ flex: 1 }} />
-    <button className="btn sec" onClick={addManualTick}>+ Минута вручную</button>
-    <button className="btn pri" disabled={!!busy} onClick={() => fileMon.current?.click()}>📷 Монитор</button>
-    <button className="btn pri" disabled={!!busy} onClick={() => fileNda.current?.click()}>📷 НДА</button>
+    <button className="btn pri" onClick={openQuickEntry}>+ Запись</button>
+    <button className="btn photo" disabled={!!busy} onClick={() => fileMon.current?.click()}>📷 Монитор</button>
+    <button className="btn photo" disabled={!!busy} onClick={() => fileNda.current?.click()}>📷 НДА</button>
   </div>
   <input ref={fileMon} type="file" accept="image/*" capture="environment" hidden
     onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; void onFile('monitor', f); }} />
@@ -304,5 +333,6 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
     onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; void onFile('machine', f); }} />
   {align && <ScreenAlign src={align.dataUrl} initialQuad={align.initialQuad} onCancel={() => setAlign(null)} onConfirm={q => void afterAlign(q)} />}
   {confirm && <ConfirmReading state={confirm} onCancel={() => setConfirm(null)} onConfirm={(v, at) => void confirmSave(v, at)} />}
+  {quick && <QuickEntrySheet state={quick} onCancel={() => setQuick(null)} onConfirm={(p, at) => void saveQuickEntry(p, at)} />}
   </>;
 }
