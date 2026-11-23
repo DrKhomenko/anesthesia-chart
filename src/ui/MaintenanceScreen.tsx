@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { CLINIC_SETTINGS_ID, db, defaultGasOf, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch, type DeviceRec, type LocalSettings, type VitalTick } from '../db/db';
+import { CLINIC_SETTINGS_ID, clinicVentModes, db, defaultGasOf, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch, type DeviceRec, type LocalSettings, type VitalTick } from '../db/db';
 import { fmt, fmtTime, parseNum } from '../core/logic';
 import { emptyValues, resolveTickTime, type ParsedValue } from '../core/vision';
 import { cloudNotReadyReason, downscaleImage, isCloudRequestFailure, makeThumbnail, prepareCloudImage, recognitionProviderOf, recognizeWithFallback, warpPhoto } from './visionClient';
@@ -14,7 +14,7 @@ import { Field, TimePicker } from './pickers';
 import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
 import { fieldsFor, type DeviceType } from '../core/devices';
-import { entryFieldOrder, previousTick } from '../core/quickEntry';
+import { entryFieldOrder, previousTick, previousWithInductionMode } from '../core/quickEntry';
 import { formatTickGas, gasColumnLabel, resolveCaseGas } from '../core/gas';
 import { ReminderBar } from './ReminderBar';
 import { InfusionsSection } from './InfusionsSection';
@@ -257,12 +257,13 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
       monitorFieldKeys: mon?.fieldKeys ?? null,
       machineFieldKeys: mach?.fieldKeys ?? null,
       gas,
+      ventModes: clinicVentModes(clinic),
     });
-    const prev = previousTick(ticks, merge.at.toISOString());
+    const prev = previousWithInductionMode(previousTick(ticks, merge.at.toISOString()), c.induction?.ventMode);
     setQuick({
       at: merge.at.toISOString(),
       fields,
-      previous: prev ?? null,
+      previous: prev,
       mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
       gas,
     });

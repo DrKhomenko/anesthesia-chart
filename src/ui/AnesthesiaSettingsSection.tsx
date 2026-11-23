@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  CLINIC_SETTINGS_ID, clinicBlockNames, clinicInfusionUnits, clinicLocalAnesthetics, db, defaultGasOf, getLocalSettings, saveLocalSettings, saveWithAudit,
+  CLINIC_SETTINGS_ID, clinicBlockNames, clinicInfusionUnits, clinicLocalAnesthetics, clinicVentModes, db, defaultGasOf, getLocalSettings, saveLocalSettings, saveWithAudit,
   type ClinicSettings, type LocalSettings,
 } from '../db/db';
 import { canAddCatalogItem, parseNum } from '../core/logic';
@@ -15,6 +15,7 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
   const [newUnit, setNewUnit] = useState('');
   const [newBlock, setNewBlock] = useState('');
   const [newAnest, setNewAnest] = useState('');
+  const [newVent, setNewVent] = useState('');
   useEffect(() => {
     void getLocalSettings().then(s => {
       setLoc(s);
@@ -35,6 +36,8 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
   const anests = clinicLocalAnesthetics(cs);
   const blockCheck = canAddCatalogItem(newBlock, blocks.map((name, i) => ({ id: String(i), name })));
   const anestCheck = canAddCatalogItem(newAnest, anests.map((x, i) => ({ id: String(i), name: x.name })));
+  const vents = clinicVentModes(cs);
+  const ventCheck = canAddCatalogItem(newVent, vents.map((name, i) => ({ id: String(i), name })));
   return <>
     <section className="card" style={{ marginTop: 16 }}>
       <div className="h">Напоминания о записи показателей</div>
@@ -60,6 +63,17 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
           <button key={v} type="button" className={gas === v ? 'on' : ''} onClick={() => putClinic({ defaultGas: v })}>{ru}</button>)}
       </div>
       <div className="muted small" style={{ marginTop: 8 }}>Если на индукции газ уже выбран, в поддержании спрашивается только он. Эта настройка нужна, когда на индукции газ не указали. «Спрашивать» — один раз, не оба поля каждый раз.</div>
+    </section>
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="h">Режимы вентиляции</div>
+      <div className="chipbar">{vents.map(n => <span key={n} className="chip">{n}
+        <button className="x" aria-label={`Убрать ${n}`} style={{ marginLeft: 6 }} onClick={() => putClinic({ ventModes: vents.filter(x => x !== n) })}>✕</button></span>)}</div>
+      <div className="row" style={{ marginTop: 10 }}>
+        <label className="field" style={{ flex: 1 }}><span className="fl">Новый режим</span>
+          <input value={newVent} placeholder="например PCV-VG" onChange={e => setNewVent(e.target.value)} /></label>
+        <button className="btn sm pri" disabled={!ventCheck.ok} onClick={() => { if (ventCheck.ok) { putClinic({ ventModes: [...vents, ventCheck.name] }); setNewVent(''); } }}>Добавить</button>
+      </div>
+      <div className="muted small">Стартовый набор: Спонтанно, PCV, VCV, SIMV, PSV (WATO EX-35Vet). Список правит клиника. Выбор — одним касанием в быстрой записи.</div>
     </section>
     <section className="card" style={{ marginTop: 16 }}>
       <div className="h">Единицы скорости инфузий</div>

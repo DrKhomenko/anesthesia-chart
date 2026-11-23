@@ -7,6 +7,7 @@ import type { DefaultGasSetting, GasId } from '../core/gas';
 import { normalizeDefaultGas } from '../core/gas';
 import { DEFAULT_REMINDER_INTERVAL_MIN, normalizeReminderInterval } from '../core/reminder';
 import { DEFAULT_LOCAL_ANESTHETICS, type BlockGuidance, type BlockSide, type LocalAnestheticCat } from '../core/regional';
+import { ventModesOf } from '../core/ventModes';
 import { blockNamesOf as regionalBlockNamesOf, localAnestheticsOf as regionalLocalAnestheticsOf } from '../core/regional';
 import { PRESET_DEVICES, PRESET_UMEC12_ID, PRESET_WATO_ID, type DeviceType, type FieldRegion } from '../core/devices';
 import { findTickAtMinute, type ParsedValue } from '../core/vision';
@@ -83,12 +84,17 @@ export interface ClinicSettings extends Syncable {
   blockNames?: string[];
   /** Местные анестетики. Если поле ещё не задавалось, при первом запуске подставляются бупивакаин, лидокаин, ропивакаин без максимумов. */
   localAnesthetics?: LocalAnestheticCat[];
+  /** Режимы вентиляции для быстрой записи и индукции. Если не задано — стартовый набор WATO. */
+  ventModes?: string[];
 }
 export function clinicBlockNames(s: ClinicSettings | undefined | null): string[] {
   return regionalBlockNamesOf(s?.blockNames);
 }
 export function clinicLocalAnesthetics(s: ClinicSettings | undefined | null): LocalAnestheticCat[] {
   return regionalLocalAnestheticsOf(s?.localAnesthetics);
+}
+export function clinicVentModes(s: ClinicSettings | undefined | null): string[] {
+  return ventModesOf(s?.ventModes);
 }
 export function defaultGasOf(s: ClinicSettings | undefined | null): DefaultGasSetting {
   return normalizeDefaultGas(s?.defaultGas);

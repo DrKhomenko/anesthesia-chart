@@ -5,6 +5,7 @@ import type { GasId } from './gas';
 import { FIELD_TO_GAS, GAS_FIELD } from './gas';
 import { isOutOfRange, type ParsedValue } from './vision';
 import type { VitalFields } from '../db/db';
+import { DEFAULT_VENT_MODES, ventModesOf } from './ventModes';
 
 export interface EntryField {
   key: string;
@@ -18,11 +19,12 @@ export interface EntryField {
   source: 'monitor' | 'machine' | 'manual';
 }
 
-/** ЧСС, SpO₂, EtCO₂, ЧДД, T, АД сист/диаст/ср, Sevo/Iso %, FiO₂, Pпик, VT */
+/** ЧСС, SpO₂, EtCO₂, ЧДД, T, АД сист/диаст/ср, Sevo/Iso %, Режим, FiO₂, Pпик, VT */
 export const DEFAULT_ENTRY_KEYS: readonly string[] = [
   'hr', 'spo2', 'etco2', 'rr', 'tempC',
   'nibpSys', 'nibpDia', 'nibpMap',
   'sevoPct', 'isoPct',
+  'ventMode',
   'fio2', 'pPeak', 'vtInsp',
 ];
 
@@ -47,6 +49,7 @@ const OVERRIDE: Record<string, Partial<EntryField> & { label: string; source: En
   nibpDia: { label: 'АД диаст', source: 'monitor' },
   nibpMap: { label: 'АД ср', source: 'monitor' },
   vtInsp: { label: 'VT', source: 'machine' },
+  ventMode: { label: 'Режим', kind: 'enum', enumValues: [...DEFAULT_VENT_MODES], allowDecimal: false, source: 'machine' },
 };
 
 function unique(keys: string[]): string[] {
@@ -114,23 +117,30 @@ export function entryFieldOrder(opts: {
   machineFieldKeys?: string[] | null;
   /** Один газ (из индукции/настроек). null — оба не показываем, лист выберет газ. 'both' — старый режим (тесты/история). */
   gas?: GasId | 'both' | null;
+  /** Справочник режимов ИВЛ. Если не передан — стартовый набор. */
+  ventModes?: string[] | null;
 } = {}): EntryField[] {
   const mon = new Set(monitorEntryKeys(opts.monitorFieldKeys));
   const mach = new Set(machineEntryKeys(opts.machineFieldKeys));
   const gas = opts.gas === undefined ? 'both' : opts.gas;
+  const modes = ventModesOf(opts.ventModes);
   const keys = DEFAULT_ENTRY_KEYS.filter(k => {
     if (k === 'sevoPct' || k === 'isoPct') {
       if (gas === 'both') return true;
       if (!gas) return false;
       return GAS_FIELD[gas] === k;
     }
+    // Режим всегда в минуте (колонка таблицы), не зависит от шаблона прибора.
+    if (k === 'ventMode') return true;
     if ((MANUAL_ENTRY_KEYS as readonly string[]).includes(k)) return true;
     const src = entryFieldByKey(k)?.source;
     if (src === 'monitor') return mon.has(k);
     if (src === 'machine') return mach.has(k);
     return true;
   });
-  return keys.map(entryFieldByKey).filter((f): f is EntryField => !!f);
+  return keys.map(entryFieldByKey).filter((f): f is EntryField => !!f).map(f =>
+    f.key === 'ventMode' ? { ...f, kind: 'enum' as const, enumValues: modes, allowDecimal: false } : f,
+  );
 }
 
 /** Подставить в список поле выбранного газа, убрав другой, не теряя остальные поля. */
@@ -142,11 +152,25 @@ export function withGasField(fields: EntryField[], gas: GasId): EntryField[] {
   const idx = fields.findIndex(f => FIELD_TO_GAS[f.key]);
   if (idx < 0) {
     // после АД / перед FiO₂
-    const fio = without.findIndex(f => f.key === 'fio2');
-    const at = fio >= 0 ? fio : without.length;
+    const mach = without.findIndex(f => f.key === 'ventMode' || f.key === 'fio2');
+    const at = mach >= 0 ? mach : without.length;
     return [...without.slice(0, at), field, ...without.slice(at)];
   }
   return [...without.slice(0, idx), field, ...without.slice(idx)];
+}
+
+/** Если прошлой минуты нет или в ней нет режима — взять режим из индукции. Остальные поля прошлого не затираются. */
+export function previousWithInductionMode(
+  prev: VitalFields | null | undefined,
+  inductionVentMode?: string | null,
+): VitalFields | null {
+  const mode = (inductionVentMode ?? '').trim();
+  if (prev) {
+    const has = prev.ventMode != null && String(prev.ventMode).trim() !== '';
+    if (has || !mode) return prev;
+    return { ...prev, ventMode: mode };
+  }
+  return mode ? { ventMode: mode } : null;
 }
 
 export function previousValueForKey(tick: VitalFields | null | undefined, key: string): ParsedValue {

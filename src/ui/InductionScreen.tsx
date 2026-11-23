@@ -1,3 +1,4 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
 import { TimePicker, Field } from './pickers';
@@ -5,16 +6,17 @@ import { PhaseDrugs } from './PhaseDrugs';
 import { InfusionsSection } from './InfusionsSection';
 import { RegionalSection } from './RegionalSection';
 import { Seg, YesNoSeg, Labeled, Notes } from './formBits';
-import type { InductionData } from '../db/db';
+import { CLINIC_SETTINGS_ID, clinicVentModes, db, type InductionData } from '../db/db';
+import { modesForPicker } from '../core/ventModes';
 
 /** Размеры трубок — стандартный ряд маркировки ЭТТ (внутр. диаметр, мм), не клиническая рекомендация. */
 const ETT_SIZES = ['2,0', '2,5', '3,0', '3,5', '4,0', '4,5', '5,0', '5,5', '6,0', '6,5', '7,0', '7,5', '8,0', '8,5', '9,0', '9,5', '10,0', '11,0', '12,0'];
-export const VENT_MODES = ['Спонт.', 'Ручная', 'PCV', 'VCV', 'SIMV', 'PSV'];
-
 export function InductionScreen({ id, onSaved }: { id: string; onSaved: (s: SaveState) => void }) {
   const { c, update, flush } = useCaseDraft(id, onSaved);
+  const clinic = useLiveQuery(() => db.clinicSettings.get(CLINIC_SETTINGS_ID), []);
   if (!c) return <div className="main muted">Загрузка…</div>;
   const ind = c.induction ?? {};
+  const ventModes = modesForPicker(clinicVentModes(clinic), ind.ventMode);
   const u = (p: Partial<InductionData>) => update({ induction: { ...ind, ...p } });
   const uf = (k: keyof InductionData) => (v: string) => u({ [k]: v } as Partial<InductionData>);
 
@@ -33,7 +35,7 @@ export function InductionScreen({ id, onSaved }: { id: string; onSaved: (s: Save
       <RegionalSection c={c} onSaved={onSaved} phase="induction" />
       <section className="card">
         <div className="h">Начальные настройки ИВЛ</div>
-        <Seg value={ind.ventMode as string} options={VENT_MODES.map(v => ({ v, ru: v }))} onChange={v => u({ ventMode: v })} />
+        <Seg value={ind.ventMode as string} options={ventModes.map(v => ({ v, ru: v }))} onChange={v => u({ ventMode: v })} />
         <div className="g g2" style={{ marginTop: 12 }}>
           <Field label="Pinsp, см H₂O" value={ind.pinsp ?? ''} onChange={uf('pinsp')} num />
           <Field label="VT, мл" value={ind.vt ?? ''} onChange={uf('vt')} num />

@@ -5,10 +5,10 @@ import { go, type SaveState } from './App';
 import { TimePicker, Field } from './pickers';
 import { PhaseDrugs } from './PhaseDrugs';
 import { Seg, Labeled, Notes } from './formBits';
-import { db, CLINIC_SETTINGS_ID, complicationLabelsOf, defaultGasOf, getLocalSettings, recoveryScaleOf, upsertVitalTick, type RecoveryData, type VitalTick } from '../db/db';
+import { db, CLINIC_SETTINGS_ID, clinicVentModes, complicationLabelsOf, defaultGasOf, getLocalSettings, recoveryScaleOf, upsertVitalTick, type RecoveryData, type VitalTick } from '../db/db';
 import { computeTimeline, fmtDuration } from '../core/timeline';
 import { fmtTime } from '../core/logic';
-import { entryFieldOrder, previousTick } from '../core/quickEntry';
+import { entryFieldOrder, previousTick, previousWithInductionMode } from '../core/quickEntry';
 import { resolveCaseGas } from '../core/gas';
 import { resolveTickTime } from '../core/vision';
 import { QuickEntrySheet, type QuickEntryState } from './QuickEntrySheet';
@@ -38,10 +38,11 @@ export function RecoveryScreen({ id, onSaved }: { id: string; onSaved: (s: SaveS
       monitorFieldKeys: mon?.fieldKeys ?? null,
       machineFieldKeys: mach?.fieldKeys ?? null,
       gas,
+      ventModes: clinicVentModes(clinic),
     });
-    const prev = previousTick(ticks, merge.at.toISOString());
+    const prev = previousWithInductionMode(previousTick(ticks, merge.at.toISOString()), c.induction?.ventMode);
     setQuick({
-      at: merge.at.toISOString(), fields, previous: prev ?? null, gas,
+      at: merge.at.toISOString(), fields, previous: prev, gas,
       mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : null,
     });
   };

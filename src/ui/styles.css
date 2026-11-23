@@ -393,3 +393,11 @@ table.vtable tbody tr.on td:last-child{border-radius:0 10px 10px 0}
   .reg-keys .qe-key{min-height:48px;font-size:24px}
   .reg-keys{gap:6px}
 }
+
+.qe-mode{display:flex;align-items:flex-start;gap:10px;margin:0 0 8px;flex-shrink:0}
+.qe-mode-chips{flex:1;min-width:0}
+.qe-mode .chip{min-height:40px;padding:0 12px;font-size:14px}
+.qe-mode .chip.ghost{outline:1.5px dashed var(--mut);background:transparent}
+@media (max-width:600px){
+  .qe-mode{flex-direction:column;gap:6px}
+}

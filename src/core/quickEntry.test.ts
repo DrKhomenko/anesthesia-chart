@@ -9,12 +9,12 @@ import {
 import { MONITOR_FIELDS, MACHINE_FIELDS } from './devices';
 
 describe('entryFieldOrder', () => {
-  it('по умолчанию: ЧСС, SpO₂, EtCO₂, ЧДД, T, АД сист/диаст/ср, Sevo/Iso, FiO₂, Pпик, VT', () => {
+  it('по умолчанию: ЧСС, SpO₂, EtCO₂, ЧДД, T, АД сист/диаст/ср, Sevo/Iso, Режим, FiO₂, Pпик, VT', () => {
     expect(entryFieldOrder().map(f => f.key)).toEqual([...DEFAULT_ENTRY_KEYS]);
     expect(entryFieldOrder().map(f => f.label)).toEqual([
       'ЧСС', 'SpO₂', 'EtCO₂', 'ЧДД', 'T',
       'АД сист', 'АД диаст', 'АД ср',
-      'Sevo', 'Iso',
+      'Sevo', 'Iso', 'Режим',
       'FiO₂', 'Pпик', 'VT',
     ]);
   });
@@ -24,9 +24,8 @@ describe('entryFieldOrder', () => {
       monitorFieldKeys: ['spo2', 'hr', 'pr', 'etco2'],
       machineFieldKeys: ['pPeak', 'ventMode', 'fio2'],
     }).map(f => f.key);
-    expect(keys).toEqual(['hr', 'spo2', 'etco2', 'sevoPct', 'isoPct', 'fio2', 'pPeak']);
+    expect(keys).toEqual(['hr', 'spo2', 'etco2', 'sevoPct', 'isoPct', 'ventMode', 'fio2', 'pPeak']);
     expect(keys).not.toContain('pr');
-    expect(keys).not.toContain('ventMode');
   });
 
   it('выключенное в шаблоне поле не попадает в список, Sevo и Iso всегда есть', () => {
@@ -34,16 +33,16 @@ describe('entryFieldOrder', () => {
       monitorFieldKeys: ['hr', 'spo2'],
       machineFieldKeys: ['vtInsp'],
     }).map(f => f.key);
-    expect(keys).toEqual(['hr', 'spo2', 'sevoPct', 'isoPct', 'vtInsp']);
+    expect(keys).toEqual(['hr', 'spo2', 'sevoPct', 'isoPct', 'ventMode', 'vtInsp']);
     expect(keys).not.toContain('etco2');
     expect(keys).not.toContain('fio2');
   });
 
   it('t2 из шаблона монитора становится полем T; одного датчика достаточно', () => {
     const onlyT2 = entryFieldOrder({ monitorFieldKeys: ['hr', 't2'], machineFieldKeys: [] }).map(f => f.key);
-    expect(onlyT2).toEqual(['hr', 'tempC', 'sevoPct', 'isoPct']);
+    expect(onlyT2).toEqual(['hr', 'tempC', 'sevoPct', 'isoPct', 'ventMode']);
     const both = entryFieldOrder({ monitorFieldKeys: ['t1', 't2', 'hr'], machineFieldKeys: [] }).map(f => f.key);
-    expect(both).toEqual(['hr', 'tempC', 'sevoPct', 'isoPct']);
+    expect(both).toEqual(['hr', 'tempC', 'sevoPct', 'isoPct', 'ventMode']);
     const onlyT1 = monitorEntryKeys(['t1', 'hr']);
     expect(onlyT1).toEqual(['tempC', 'hr']);
     const noTemp = entryFieldOrder({ monitorFieldKeys: ['hr'], machineFieldKeys: [] }).map(f => f.key);
@@ -179,7 +178,7 @@ describe('auto MAP in draft', () => {
 describe('один газ в минуте', () => {
   it('по газу индукции в списке только Sevo или только Iso, оба — в режиме both', () => {
     expect(entryFieldOrder({ gas: 'sevo' }).map(f => f.key)).toEqual([
-      'hr', 'spo2', 'etco2', 'rr', 'tempC', 'nibpSys', 'nibpDia', 'nibpMap', 'sevoPct', 'fio2', 'pPeak', 'vtInsp',
+      'hr', 'spo2', 'etco2', 'rr', 'tempC', 'nibpSys', 'nibpDia', 'nibpMap', 'sevoPct', 'ventMode', 'fio2', 'pPeak', 'vtInsp',
     ]);
     expect(entryFieldOrder({ gas: 'iso' }).map(f => f.key)).toContain('isoPct');
     expect(entryFieldOrder({ gas: 'iso' }).map(f => f.key)).not.toContain('sevoPct');

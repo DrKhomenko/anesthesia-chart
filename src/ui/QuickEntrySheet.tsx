@@ -8,6 +8,7 @@ import {
 import { calcMap, fmt } from '../core/logic';
 import type { GasId } from '../core/gas';
 import { FIELD_TO_GAS, GAS_FIELD, GAS_RU } from '../core/gas';
+import { DEFAULT_VENT_MODES, modesForPicker } from '../core/ventModes';
 import { TimePicker } from './pickers';
 
 export interface QuickEntryState {
@@ -31,7 +32,10 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
   onGasChange?: (gas: GasId) => void;
 }) {
   const [gas, setGas] = useState<GasId | null>(state.gas ?? null);
-  const fields = useMemo(() => gas ? withGasField(state.fields, gas) : state.fields.filter(f => !FIELD_TO_GAS[f.key]), [state.fields, gas]);
+  const allFields = useMemo(() => gas ? withGasField(state.fields, gas) : state.fields.filter(f => !FIELD_TO_GAS[f.key]), [state.fields, gas]);
+  // Режим выбирается чипами рядом с аппаратом, отдельным шагом клавиатуры не идёт.
+  const fields = useMemo(() => allFields.filter(f => f.key !== 'ventMode'), [allFields]);
+  const modeField = allFields.find(f => f.key === 'ventMode');
   const [at, setAt] = useState(state.at);
   const startIdx = Math.max(0, fields.findIndex(f => f.key === state.startKey));
   const [idx, setIdx] = useState(startIdx < 0 ? 0 : startIdx);
@@ -44,12 +48,12 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
   const prevText = field ? formatPrevious(state.previous, field.key) : '';
   const fieldTouch = field ? (touch[field.key] ?? 'untouched') : 'untouched';
   const effective = field ? effectiveFieldValue(draft, field.key, state.previous, fieldTouch) : '';
-  const hasPrev = !!state.previous && fields.some(f => formatPrevious(state.previous, f.key) !== '');
+  const hasPrev = !!state.previous && allFields.some(f => formatPrevious(state.previous, f.key) !== '');
   const oor = field ? isEntryOutOfRange(field, effective) : false;
   const last = !needGas && idx >= fields.length - 1;
   const filled = useMemo(
-    () => fields.filter(f => effectiveFieldValue(draft, f.key, state.previous, touch[f.key]).trim() !== '').length,
-    [draft, fields, touch, state.previous],
+    () => allFields.filter(f => effectiveFieldValue(draft, f.key, state.previous, touch[f.key]).trim() !== '').length,
+    [draft, allFields, touch, state.previous],
   );
   const effSys = effectiveFieldValue(draft, 'nibpSys', state.previous, touch.nibpSys);
   const effDia = effectiveFieldValue(draft, 'nibpDia', state.previous, touch.nibpDia);
@@ -68,7 +72,7 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
   };
   const skip = () => setIdx(i => Math.min(fields.length - 1, i + 1));
   const commitWith = (d: Record<string, string>, t: Record<string, FieldTouch>, man: boolean) => {
-    onConfirm(entryDraftToPatch(d, fields, { mapManual: man, previous: state.previous, touch: t }), at);
+    onConfirm(entryDraftToPatch(d, allFields, { mapManual: man, previous: state.previous, touch: t }), at);
   };
   const commit = () => commitWith(draft, touch, mapManual);
   const next = () => { if (last) commit(); else skip(); };
@@ -82,9 +86,9 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
     if (last) commitWith(d, t, man); else skip();
   };
   const copyAll = () => setDraft(s => {
-    const n = copyAllPrevious(s, fields.map(f => f.key), state.previous);
+    const n = copyAllPrevious(s, allFields.map(f => f.key), state.previous);
     const t: Record<string, FieldTouch> = { ...touch };
-    for (const f of fields) if ((n[f.key] ?? '').trim() !== '') t[f.key] = 'edited';
+    for (const f of allFields) if ((n[f.key] ?? '').trim() !== '') t[f.key] = 'edited';
     setTouch(t);
     const m = calcMap(n.nibpSys, n.nibpDia);
     const typed = (n.nibpMap ?? '').trim();
@@ -111,6 +115,14 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
     });
   };
 
+  const modeVal = modeField ? effectiveFieldValue(draft, 'ventMode', state.previous, touch.ventMode) : '';
+  const modeTouch = touch.ventMode ?? 'untouched';
+  const modeOptions = modesForPicker(modeField?.enumValues ?? [...DEFAULT_VENT_MODES], modeVal || formatPrevious(state.previous, 'ventMode'));
+  const setMode = (v: string, how: FieldTouch) => {
+    setTouch(s => ({ ...s, ventMode: how }));
+    setDraft(s => ({ ...s, ventMode: v }));
+  };
+
   const ghost = !!field && fieldTouch === 'untouched' && raw === '' && prevText !== '' && !autoMap;
   const display = field ? (autoMap ? (fmt(calcMap(effSys, effDia) as number, 0) || effective || '—') : (effective || '—')) : '';
 
@@ -128,6 +140,16 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
           <button type="button" className={gas === 'iso' ? 'on' : ''} onClick={() => switchGas('iso')}>Iso</button>
         </div>
       </div>
+      {modeField && <div className="qe-mode">
+        <span className="muted small">Режим</span>
+        <div className="chipbar qe-mode-chips">
+          <button type="button" className={`chip ${modeTouch === 'cleared' || (modeTouch === 'edited' && modeVal === '') ? 'on' : ''}`}
+            onClick={() => setMode('', 'cleared')}>—</button>
+          {modeOptions.map(m =>
+            <button key={m} type="button" className={`chip ${modeVal === m && modeTouch !== 'cleared' ? 'on' : ''} ${modeTouch === 'untouched' && modeVal === m ? 'ghost' : ''}`}
+              onClick={() => setMode(m, 'edited')}>{m}</button>)}
+        </div>
+      </div>}
       {needGas && <div className="qe-body">
         <div className="qe-fl">Какой газ</div>
         <div className="muted small qe-hint">На индукции газ не выбран. Достаточно указать один — второй каждый раз спрашивать не будем.</div>
