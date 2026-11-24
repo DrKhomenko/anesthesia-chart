@@ -109,3 +109,20 @@ describe('db', () => {
 });
 
 function normalizeLive(a: string, b: string) { return a.toLowerCase() === b.toLowerCase(); }
+
+describe('обновление рамок предустановленных шаблонов', () => {
+  it('нетронутые старые рамки меняются на новые, правки клиники остаются', async () => {
+    const { ensurePresetRegions } = await import('./db');
+    const { LEGACY_PRESET_REGIONS, WATO35_REGIONS, UMEC12_REGIONS } = await import('../core/devices');
+    const d = new ChartDB('regions-migrate-' + Math.random());
+    await seed(d);
+    const w = await d.devices.get(PRESET_WATO_ID);
+    await d.devices.put({ ...w!, regions: { ...LEGACY_PRESET_REGIONS[PRESET_WATO_ID][0] } });
+    const u = await d.devices.get(PRESET_UMEC12_ID);
+    const custom = { ...UMEC12_REGIONS, hr: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 } };
+    await d.devices.put({ ...u!, regions: custom });
+    await ensurePresetRegions(d);
+    expect((await d.devices.get(PRESET_WATO_ID))!.regions).toEqual(WATO35_REGIONS);
+    expect((await d.devices.get(PRESET_UMEC12_ID))!.regions.hr).toEqual({ x: 0.5, y: 0.5, w: 0.1, h: 0.1 });
+  });
+});

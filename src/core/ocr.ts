@@ -1,6 +1,6 @@
 // Разбор текста OCR, проверка уверенности и рамок, обход полей шаблона. Сам движок (tesseract) подключается снаружи.
 import type { DeviceField, FieldRegion } from './devices';
-import { cropRegion, hasInk, preprocessCrop, type Pix } from './geom';
+import { cropRegion, hasInk, locateGlyphs, preprocessCrop, type Pix } from './geom';
 import {
   emptyValues, isBlankToken, isOutOfRange, parseDeviceTime, parseLooseNumber, parseNibp,
   type ParsedReading, type ParsedValue,
@@ -12,9 +12,21 @@ export const MIN_OCR_CONFIDENCE = 30;
 export const OCR_DIGIT_WHITELIST = '0123456789.,/:-';
 export const OCR_TEXT_WHITELIST = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-';
 
-export type OcrKind = 'digits' | 'text';
+/** digits — общий набор (время), number — одно число, nibp — «120/80 (93)», ratio — I:E, text — режим. */
+export type OcrKind = 'digits' | 'text' | 'number' | 'nibp' | 'ratio';
+export interface OcrOpts { psm?: 'line' | 'word' }
+
+export function whitelistFor(kind: OcrKind): string {
+  switch (kind) {
+    case 'text': return OCR_TEXT_WHITELIST;
+    case 'number': return '0123456789.';
+    case 'nibp': return '0123456789/()';
+    case 'ratio': return '0123456789:.';
+    default: return OCR_DIGIT_WHITELIST;
+  }
+}
 export type OcrReason = 'ok' | 'unreadable' | 'low-confidence' | 'out-of-range' | 'no-region';
-export type OcrFn = (pix: Pix, kind: OcrKind) => Promise<{ text: string; confidence: number }>;
+export type OcrFn = (pix: Pix, kind: OcrKind, opts?: OcrOpts) => Promise<{ text: string; confidence: number }>;
 
 export interface FieldOcrResult {
   key: string;
@@ -32,6 +44,9 @@ export interface RecognizeFieldsResult extends ParsedReading {
 function looksLikeIE(s: string): string | null {
   const t = s.trim().replace(/\s+/g, '').replace('/', ':');
   if (/^\d+:\d+$/.test(t)) return t;
+  // двоеточие потеряно совсем: «12» в поле I:E — это 1:2
+  const two = /^([1-4])([1-8])$/.exec(t);
+  if (two) return `${two[1]}:${two[2]}`;
   // двоеточие часто читается как точка: «1.2» при I:E 1:2
   const m = /^(\d+)[.,](\d+)$/.exec(t);
   if (m && Number(m[1]) >= 1 && Number(m[1]) <= 4 && Number(m[2]) >= 1 && Number(m[2]) <= 8) return `${m[1]}:${m[2]}`;
@@ -131,13 +146,61 @@ function pickOcrCandidate(cands: { text: string; confidence: number }[], field?:
   return { text: w.text, confidence: w.confidence, empty: false };
 }
 
-async function ocrRegion(screen: Pix, region: FieldRegion, kind: OcrKind, ocr: OcrFn, field?: DeviceField): Promise<{ text: string; confidence: number; empty: boolean }> {
+type Cand = { text: string; confidence: number };
+
+function candOk(c: Cand, kind: OcrKind, field?: DeviceField): boolean {
+  const t = (c.text ?? '').trim();
+  if (!t) return false;
+  if (field?.kind === 'number' && field.key !== 'setIE') {
+    const n = bestNumberInText(t, field);
+    return n != null && !isOutOfRange(field, n) && c.confidence >= 60;
+  }
+  if (field?.key === 'setIE') return looksLikeIE(t) != null;
+  if (kind === 'nibp') return /\d+\s*\/\s*\d+/.test(t) && c.confidence >= 50;
+  return c.confidence >= 60;
+}
+
+/**
+ * Сначала ищем сами знаки внутри (расширенной) рамки и распознаём только их — без рамок кнопок и подписей.
+ * Варианты: чистая маска знаков, полутон; строка, затем слово. Старый способ (вся рамка) — запасной.
+ */
+async function ocrRegion(screen: Pix, region: FieldRegion, kind: OcrKind, ocr: OcrFn, field?: DeviceField, useGlyphs = true): Promise<{ text: string; confidence: number; empty: boolean }> {
+  const cands: Cand[] = [];
+  const smart = useGlyphs && locateGlyphs(screen, region, { minRel: kind === 'nibp' ? 0.4 : 0.6 });
+  if (smart) {
+    const g = smart;
+    // Tesseract часто теряет точку/двоеточие; где они стоят, мы знаем по геометрии знаков
+    const fix = (c: Cand): Cand => {
+      if ((kind !== 'number' && kind !== 'ratio') || !g.separators.length) return c;
+      const digits = c.text.replace(/\D/g, '');
+      if (digits.length !== g.digitCount || /[.:,]/.test(c.text)) return c;
+      const sep = g.separators[0];
+      if (sep.index <= 0 || sep.index >= digits.length) return c;
+      const ch = kind === 'ratio' ? ':' : '.';
+      return { ...c, text: digits.slice(0, sep.index) + ch + digits.slice(sep.index) };
+    };
+    const ocr0 = ocr;
+    ocr = async (p, k, o) => fix(await ocr0(p, k, o));
+    const a = await ocr(smart.binary, kind);
+    cands.push({ text: a.text, confidence: a.confidence + 15 });
+    if (!candOk(a, kind, field)) {
+      const b = await ocr(smart.binary, kind, { psm: 'word' });
+      cands.push({ text: b.text, confidence: b.confidence + 10 });
+      if (!candOk(b, kind, field)) {
+        const c = await ocr(smart.gray, kind);
+        cands.push({ text: c.text, confidence: c.confidence + 5 });
+      }
+    }
+    const best = pickOcrCandidate(cands, field);
+    return best.empty ? best : { ...best, confidence: Math.min(100, best.confidence) };
+  }
+  // знаков не нашли — прочерк или пусто; старый путь только как запасной
   const rawCrop = cropRegion(screen, region);
-  const cands: { text: string; confidence: number }[] = [];
   for (const threshold of [false, true]) {
     const crop = preprocessCrop(rawCrop, { threshold });
     if (!hasInk(crop)) continue;
-    cands.push(await ocr(crop, kind));
+    const r = await ocr(crop, kind);
+    cands.push({ text: r.text, confidence: r.confidence * 0.6 });
   }
   return pickOcrCandidate(cands, field);
 }
@@ -158,7 +221,7 @@ export async function recognizeFields(opts: {
   let deviceTimeRaw: string | null = null;
 
   if (regions[DEVICE_TIME_REGION_KEY]) {
-    const r = await ocrRegion(screen, regions[DEVICE_TIME_REGION_KEY], 'digits', ocr);
+    const r = await ocrRegion(screen, regions[DEVICE_TIME_REGION_KEY], 'digits', ocr, undefined, false);
     if (!r.empty) {
       const parsed = parseDeviceTime(r.text, opts.now ?? new Date());
       if (parsed) deviceTimeRaw = r.text.replace(/\s+/g, ' ').trim();
@@ -167,7 +230,7 @@ export async function recognizeFields(opts: {
 
   const nibpFields = fields.filter(f => f.key === 'nibpSys' || f.key === 'nibpDia' || f.key === 'nibpMap');
   if (nibpFields.length && regions[NIBP_REGION_KEY]) {
-    const r = await ocrRegion(screen, regions[NIBP_REGION_KEY], 'digits', ocr);
+    const r = await ocrRegion(screen, regions[NIBP_REGION_KEY], 'nibp', ocr);
     const acc = acceptNibp(r.empty ? '' : r.text, r.confidence, minConf);
     if (values.nibpSys !== undefined) values.nibpSys = acc.sys;
     if (values.nibpDia !== undefined) values.nibpDia = acc.dia;
@@ -187,7 +250,7 @@ export async function recognizeFields(opts: {
       details.push(d); flags[f.key] = 'no-region';
       continue;
     }
-    const kind: OcrKind = f.kind === 'enum' ? 'text' : 'digits';
+    const kind: OcrKind = f.kind === 'enum' ? 'text' : (f.key === 'setIE' ? 'ratio' : (f.kind === 'number' ? 'number' : 'digits'));
     const r = await ocrRegion(screen, region, kind, ocr, f);
     const acc = acceptOcrValue(f, r.empty ? '' : r.text, r.confidence, minConf);
     values[f.key] = acc.reason === 'out-of-range' ? acc.value : (acc.reason === 'ok' ? acc.value : null);

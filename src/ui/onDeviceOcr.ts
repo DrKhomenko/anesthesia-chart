@@ -3,7 +3,7 @@
 // Поэтому в распознаватель передаём PNG-blob.
 import type { DeviceRec } from '../db/db';
 import { fieldsFor } from '../core/devices';
-import { recognizeFields, OCR_DIGIT_WHITELIST, OCR_TEXT_WHITELIST, type OcrFn, type RecognizeFieldsResult } from '../core/ocr';
+import { recognizeFields, whitelistFor, type OcrFn, type RecognizeFieldsResult } from '../core/ocr';
 import type { Pix } from '../core/geom';
 import type { PSM } from 'tesseract.js';
 import { errorText, releaseCanvas, stepError, withTimeout } from './errorText';
@@ -16,7 +16,7 @@ function ocrDir(): string {
 }
 
 let workerPromise: Promise<import('tesseract.js').Worker> | null = null;
-let lastKind: 'digits' | 'text' | null = null;
+let lastKind: string | null = null;
 
 function pixToImageSource(pix: Pix): Promise<Blob | string> {
   const c = document.createElement('canvas');
@@ -79,15 +79,17 @@ async function getWorker(): Promise<import('tesseract.js').Worker> {
   return workerPromise;
 }
 
-export const browserOcr: OcrFn = async (pix, kind) => {
+export const browserOcr: OcrFn = async (pix, kind, opts) => {
   const worker = await getWorker();
   const { PSM } = await import('tesseract.js');
-  if (lastKind !== kind) {
+  const psm = opts?.psm === 'word' ? PSM.SINGLE_WORD : PSM.SINGLE_LINE;
+  const key = `${kind}|${psm}`;
+  if (lastKind !== key) {
     await worker.setParameters({
-      tessedit_char_whitelist: kind === 'digits' ? OCR_DIGIT_WHITELIST : OCR_TEXT_WHITELIST,
-      tessedit_pageseg_mode: String(PSM.SINGLE_LINE) as unknown as PSM,
+      tessedit_char_whitelist: whitelistFor(kind),
+      tessedit_pageseg_mode: String(psm) as unknown as PSM,
     });
-    lastKind = kind;
+    lastKind = key;
   }
   const image = await pixToImageSource(pix);
   const { data } = await withTimeout(

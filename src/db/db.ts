@@ -9,7 +9,7 @@ import { DEFAULT_REMINDER_INTERVAL_MIN, normalizeReminderInterval } from '../cor
 import { DEFAULT_LOCAL_ANESTHETICS, type BlockGuidance, type BlockSide, type LocalAnestheticCat } from '../core/regional';
 import { ventModesOf } from '../core/ventModes';
 import { blockNamesOf as regionalBlockNamesOf, localAnestheticsOf as regionalLocalAnestheticsOf } from '../core/regional';
-import { PRESET_DEVICES, PRESET_UMEC12_ID, PRESET_WATO_ID, type DeviceType, type FieldRegion } from '../core/devices';
+import { LEGACY_PRESET_REGIONS, PRESET_DEVICES, PRESET_UMEC12_ID, PRESET_WATO_ID, sameRegions, type DeviceType, type FieldRegion } from '../core/devices';
 import { findTickAtMinute, type ParsedValue } from '../core/vision';
 
 export type SyncState = 'savedLocal' | 'pending' | 'synced' | 'conflict';
@@ -379,12 +379,13 @@ export async function seedDevices(database: ChartDB = db) {
   }
 }
 
-/** Если у шаблона ещё нет рамок полей (старые установки) — заполняем, не затирая правки. */
+/** Если у шаблона ещё нет рамок полей или они нетронутые старой версии — ставим текущие, не затирая правки клиники. */
 export async function ensurePresetRegions(database: ChartDB = db) {
   for (const p of PRESET_DEVICES) {
     const prev = await database.devices.get(p.id);
     if (!prev || prev.deletedAt) continue;
-    if (prev.regions && Object.keys(prev.regions).length > 0) continue;
+    const untouchedOld = (LEGACY_PRESET_REGIONS[p.id] ?? []).some(r => sameRegions(prev.regions, r));
+    if (prev.regions && Object.keys(prev.regions).length > 0 && !untouchedOld) continue;
     await database.devices.put({ ...prev, regions: { ...p.regions } });
   }
 }
