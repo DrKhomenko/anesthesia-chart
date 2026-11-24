@@ -278,6 +278,29 @@ export function isCloudRequestFailure(res: RecognizeResult): res is { ok: false;
   return !res.ok && res.requestFailed === true;
 }
 
+/** Любой неуспех облака (нет связи, нет баланса, ответ не JSON, пусто) — повод прочитать снимок на устройстве. */
+export function shouldFallbackToDevice(res: RecognizeResult): res is Extract<RecognizeResult, { ok: false }> {
+  return !res.ok;
+}
+
+/** Короткая причина вместо цепочки «модель: ошибка; модель: ошибка». */
+export function shortCloudError(error: string): string {
+  const parts = (error ?? '').split(/;\s*/).map(p => p.replace(/^[\w.\-/]+(?::[\w.-]+)?:\s+/, '').trim()).filter(Boolean);
+  const out: string[] = [];
+  for (const p of parts) {
+    let t: string;
+    if (/баланс|402|credit|insufficient/i.test(p)) t = 'нет баланса OpenRouter';
+    else if (/json|разобрать/i.test(p)) t = 'модель ответила не JSON';
+    else if (/лимит|429|rate/i.test(p)) t = 'лимит запросов';
+    else if (/ключ|401|403|auth/i.test(p)) t = 'ключ не принят';
+    else if (/время ожидания|timeout/i.test(p)) t = 'нет ответа вовремя';
+    else if (/сет|cors|fetch/i.test(p)) t = 'нет связи';
+    else t = p.length > 60 ? `${p.slice(0, 57)}…` : p;
+    if (!out.includes(t)) out.push(t);
+  }
+  return out.slice(0, 3).join(' / ') || 'нет ответа';
+}
+
 /** Текст ответа из chat/completions: строка или массив частей. */
 export function extractMessageContent(data: unknown): string {
   const root = data && typeof data === 'object' ? data as Record<string, unknown> : null;

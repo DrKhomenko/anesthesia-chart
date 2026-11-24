@@ -98,7 +98,7 @@ export function RecognitionSection({ onSaved }: { onSaved: (fn: () => Promise<un
     setKeyDirty(false);
   };
   const onCloudClick = () => {
-    if (!s.recognitionBaseUrl.trim()) applyPaid();
+    if (!s.recognitionBaseUrl.trim()) applyFree();
     else patch({ recognitionProvider: 'cloud' });
   };
   const onModelSelect = (value: string) => {
@@ -140,7 +140,7 @@ export function RecognitionSection({ onSaved }: { onSaved: (fn: () => Promise<un
           <button type="button" className={freeOn ? 'on' : ''} onClick={applyFree}>OpenRouter — бесплатно</button>
         </div>
       </div>
-      {provider === 'on-device' && <div className="muted small">Цифры читает встроенный распознаватель прямо на iPad и iPhone, интернет не нужен. После первой загрузки с сетью (около 7 МБ) всё работает офлайн. Сначала отметьте углы экрана на фото, затем проверьте цифры на листе подтверждения. Для точного чтения экрана монитора включите набор «OpenRouter» (платная модель, около копейки за снимок).</div>}
+      {provider === 'on-device' && <div className="muted small">Цифры читает встроенный распознаватель прямо на iPad и iPhone, интернет не нужен. После первой загрузки с сетью (около 7 МБ) всё работает офлайн. Сначала отметьте углы экрана на фото, затем проверьте цифры на листе подтверждения.</div>}
       {provider === 'cloud' && <>
         <div className="g g2">
           <label className="field"><span className="fl">Адрес сервера (OpenAI-совместимый)</span>
@@ -187,7 +187,7 @@ export function RecognitionSection({ onSaved }: { onSaved: (fn: () => Promise<un
         </div>
         {probe.text && <div className={probe.ok ? 'note' : 'warn'} style={{ marginTop: 0 }}>{probe.text}{probe.text === 'Пополните баланс OpenRouter' ? <> · <a href={OPENROUTER_CREDITS_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', textDecoration: 'underline' }}>пополнить</a></> : null}</div>}
         {openRouterOn
-          ? <div className="muted small">Ключ можно получить на <a href={OPENROUTER_KEYS_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', textDecoration: 'underline' }}>openrouter.ai/keys</a>. Он хранится только на этом устройстве. Набор «OpenRouter» использует платную модель Gemini 2.5 Flash: это примерно копейка за снимок, нужен баланс на счёте. Если модель не ответит, программа сама пробует запасные, затем распознаватель на устройстве. Без вашего подтверждения в карту ничего не записывается.</div>
+          ? <div className="muted small">Ключ можно получить на <a href={OPENROUTER_KEYS_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--blue)', textDecoration: 'underline' }}>openrouter.ai/keys</a>. Он хранится только на этом устройстве. Набор «OpenRouter — бесплатно» работает без баланса. Набор «OpenRouter» платный (Gemini 2.5 Flash, нужен баланс на счёте). Если облако не сработало, программа пробует запасные модели, а затем читает снимок на устройстве (если отмечены углы экрана). Без вашего подтверждения в карту ничего не записывается.</div>
           : <div className="muted small">Ключ хранится только на этом устройстве, в историю правок не попадает. Запрос идёт прямо с планшета, поэтому обычный api.openai.com из Safari не подойдёт: нужен адрес, который разрешает запросы из браузера (например OpenRouter), либо свой прокси.</div>}
       </>}
       <button type="button" className="toggle" onClick={() => patch({ storePhotoThumbnail: !s.storePhotoThumbnail })}>

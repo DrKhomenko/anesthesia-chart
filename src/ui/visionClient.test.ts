@@ -269,3 +269,20 @@ describe('response_format', () => {
     expect(formats).toEqual([{ type: 'json_object' }, null]);
   });
 });
+
+describe('запасной путь на устройство', () => {
+  it('любой неуспех облака ведёт на устройство, успех — нет', async () => {
+    const { shouldFallbackToDevice } = await import('./visionClient');
+    const reading = { values: {}, deviceTimeRaw: null, ok: false };
+    expect(shouldFallbackToDevice({ ok: false, error: 'x', reading, requestFailed: true })).toBe(true);
+    expect(shouldFallbackToDevice({ ok: false, error: 'Модель вернула не JSON', reading, requestFailed: false })).toBe(true);
+    expect(shouldFallbackToDevice({ ok: true, raw: '{}', reading: { ...reading, ok: true } })).toBe(false);
+  });
+  it('сокращает цепочку ошибок моделей', async () => {
+    const { shortCloudError } = await import('./visionClient');
+    const chain = 'google/gemini-2.5-flash: Пополните баланс OpenRouter; openai/gpt-4o-mini: Пополните баланс OpenRouter; nvidia/nemotron-3.5-super-vl:free: Модель вернула не JSON';
+    expect(shortCloudError(chain)).toBe('нет баланса OpenRouter / модель ответила не JSON');
+    expect(shortCloudError('Время ожидания истекло')).toBe('нет ответа вовремя');
+    expect(shortCloudError('')).toBe('нет ответа');
+  });
+});

@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { CLINIC_SETTINGS_ID, clinicVentModes, db, defaultGasOf, getLocalSettings, saveWithAudit, upsertVitalTick, valuesToTickPatch, type DeviceRec, type LocalSettings, type VitalTick } from '../db/db';
 import { fmt, fmtTime, parseNum } from '../core/logic';
 import { emptyValues, resolveTickTime, type ParsedValue } from '../core/vision';
-import { cloudNotReadyReason, downscaleImage, isCloudRequestFailure, makeThumbnail, prepareCloudImage, recognitionProviderOf, recognizeWithFallback, warpPhoto } from './visionClient';
+import { cloudNotReadyReason, downscaleImage, makeThumbnail, shortCloudError, shouldFallbackToDevice, prepareCloudImage, recognitionProviderOf, recognizeWithFallback, warpPhoto } from './visionClient';
 import { errorText } from './errorText';
 import { ScreenAlign } from './ScreenAlign';
 import type { Quad } from '../core/geom';
@@ -186,7 +186,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
         baseUrl: settings.recognitionBaseUrl, model: settings.recognitionModel, apiKey: settings.recognitionApiKey,
         fallbackModels: settings.recognitionFallbackModels,
       });
-      if (isCloudRequestFailure(res) && warpedPix) {
+      if (shouldFallbackToDevice(res) && warpedPix) {
         try {
           const { recognizeOnDevice } = await import('./onDeviceOcr');
           const local = await recognizeOnDevice({ screen: warpedPix, device });
@@ -197,12 +197,12 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
             type, device, values: local.values, at: merge.at.toISOString(), previewUrl,
             sentImageUrl: cloudUrl, rawAnswer: res.raw ?? null, modelUsed: res.modelUsed ?? settings.recognitionModel,
             flags: local.flags as Record<string, OcrReason>,
-            notice: `Облако недоступно (${res.error}). Показаны результаты распознавания на устройстве — проверьте их.${localNote}`,
+            notice: `Облако не сработало (${shortCloudError(res.error)}). Показаны результаты распознавания на устройстве — проверьте их.${localNote}`,
             mergeNote: merge.existing ? `На ${fmtTime(merge.at)} уже есть запись — значения дополнят её.` : (merge.usedDeviceTime ? 'Время взято с часов прибора.' : null),
           });
           return;
         } catch (localErr) {
-          openEmpty(`${res.error}; на устройстве: ${errorText(localErr)}`);
+          openEmpty(`облако: ${shortCloudError(res.error)}; на устройстве: ${errorText(localErr)}`);
           return;
         }
       }
