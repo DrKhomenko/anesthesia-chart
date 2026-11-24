@@ -6,6 +6,8 @@ import {
 } from '../db/db';
 import { canAddCatalogItem, parseNum } from '../core/logic';
 import { normalizeReminderInterval } from '../core/reminder';
+import { parseIntervalMin } from '../core/timers';
+import { playReminderChime, reminderAudioReady, unlockReminderAudio, unlockReminderAudioAsync } from './reminderAudio';
 import type { DefaultGasSetting } from '../core/gas';
 
 export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Promise<unknown>) => void }) {
@@ -16,12 +18,20 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
   const [newBlock, setNewBlock] = useState('');
   const [newAnest, setNewAnest] = useState('');
   const [newVent, setNewVent] = useState('');
+  const [blockMin, setBlockMin] = useState('');
+  const [soundOk, setSoundOk] = useState<boolean | null>(null);
   useEffect(() => {
     void getLocalSettings().then(s => {
       setLoc(s);
       setInterval(String(normalizeReminderInterval(s.reminderIntervalMin)));
     });
   }, []);
+  const [blockSeeded, setBlockSeeded] = useState(false);
+  useEffect(() => {
+    if (!cs || blockSeeded) return;
+    setBlockMin(cs.blockCheckMin != null ? String(cs.blockCheckMin) : '');
+    setBlockSeeded(true);
+  }, [cs, blockSeeded]);
   if (!cs || !loc) return null;
   const putClinic = (p: Partial<ClinicSettings>) => onSaved(() => saveWithAudit(db.clinicSettings, 'ClinicSettings', { ...cs, ...p }));
   const putLoc = (p: Partial<LocalSettings>) => onSaved(async () => {
@@ -50,7 +60,32 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
               if (n !== loc.reminderIntervalMin) void putLoc({ reminderIntervalMin: n });
             }} /></label>
         <div className="muted small">По умолчанию 5 минут. Включается и выключается переключателем на экране поддержания и пробуждения. Работает, только пока карта открыта.</div>
+        <div className="row" style={{ marginTop: 12, gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button type="button" className="btn sm pri" onClick={async () => {
+            await unlockReminderAudioAsync();
+            unlockReminderAudio();
+            playReminderChime(0);
+            window.setTimeout(() => setSoundOk(reminderAudioReady()), 150);
+          }}>Проверить звук</button>
+          {soundOk === true && <span className="muted small">Должен быть короткий резкий сигнал.</span>}
+          {soundOk === false && <span className="muted small">Звук не включился. Выключите беззвучный режим и прибавьте громкость, пока карта открыта.</span>}
+        </div>
+        <div className="muted small">На iPhone и iPad беззвучный режим (переключатель сбоку) часто глушит сайты в Safari. Громкость сайтов регулируется кнопками громкости, пока карта на экране. Звук включается после первого касания.</div>
       </div>
+    </section>
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="h">Таймеры блокад</div>
+      <label className="field"><span className="fl">Проверка блока, мин</span>
+        <input inputMode="numeric" value={blockMin} placeholder="не задано, вводится при запуске"
+          onChange={e => setBlockMin(e.target.value)}
+          onBlur={() => {
+            const raw = blockMin.trim();
+            const n = raw === '' ? null : parseIntervalMin(raw);
+            if (raw !== '' && n == null) return;
+            setBlockMin(n == null ? '' : String(n));
+            if (n !== (cs.blockCheckMin ?? null)) void putClinic({ blockCheckMin: n });
+          }} /></label>
+      <div className="muted small" style={{ marginTop: 8 }}>Пустое поле — ничего не подставляется. Если задать, кнопка ⏱ у блокады запустит отсчёт сразу. Иначе время вводится вручную.</div>
     </section>
     <section className="card" style={{ marginTop: 16 }}>
       <div className="h">Газ по умолчанию</div>

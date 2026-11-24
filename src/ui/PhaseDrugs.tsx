@@ -5,6 +5,8 @@ import { fmt, parseNum } from '../core/logic';
 import { TimePicker, DosePicker, Field } from './pickers';
 import { AdminRow, CalcCard, AddDrugForm, CONC, DOSE, ROUTES, ROUTE_CHIP } from './PremedScreen';
 import type { SaveState } from './App';
+import { requestTimerStart } from './timerStart';
+import { formatInterval, parseIntervalMin } from '../core/timers';
 
 /** Препараты одного этапа (индукция, пробуждение…) — те же строки, расчёт мг/мл и список доз, что в премедикации. */
 export function PhaseDrugs({ c, phase, title, onSaved, emptyText }: { c: CaseRec; phase: DrugPhase; title: string; onSaved: (s: SaveState) => void; emptyText?: string }) {
@@ -17,6 +19,7 @@ export function PhaseDrugs({ c, phase, title, onSaved, emptyText }: { c: CaseRec
   const [pick, setPick] = useState(false);
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState<string | null>(null);
+  const [offer, setOffer] = useState<{ admin: DrugAdmin; intervalMin: number } | null>(null);
   useEffect(() => {
     if (selId && !admins.some(a => a.id === selId)) setSelId(null);
   }, [admins, selId]);
@@ -33,6 +36,8 @@ export function PhaseDrugs({ c, phase, title, onSaved, emptyText }: { c: CaseRec
     const row = newDrugAdmin(c, d, { phase });
     await persist(row);
     setSelId(row.id); setPick(false); setQ(''); setAdding(null);
+    const iv = parseIntervalMin(d.repeatIntervalMin);
+    setOffer(iv ? { admin: row, intervalMin: iv } : null);
   };
   const nq = q.trim().toLowerCase();
   const filtered = drugs.filter(d => !nq || d.name.toLowerCase().includes(nq) || d.genericName.toLowerCase().includes(nq));
@@ -47,8 +52,11 @@ export function PhaseDrugs({ c, phase, title, onSaved, emptyText }: { c: CaseRec
         <span>Препарат</span><span>мг/кг</span><span>Всего, мг</span><span>мг/мл</span><span>мл</span>
         <span>Путь</span><span>Время</span><span className="hid">Кто</span></div>}
       <div className="g" style={{ gap: 8 }}>
-        {admins.map(a => <AdminRow key={a.id} a={a} on={a.id === selected?.id} onSelect={() => setSelId(a.id === selId ? null : a.id)} />)}
+        {admins.map(a => <AdminRow key={a.id} a={a} on={a.id === selected?.id} onSelect={() => setSelId(a.id === selId ? null : a.id)} onTimer={() => requestTimerStart({ type: 'repeat', admin: a, intervalMin: drugs.find(d => d.id === a.drugId)?.repeatIntervalMin })} />)}
         {admins.length === 0 && <div className="muted small">{emptyText ?? 'Пока нет препаратов.'}</div>}
+        {offer && <div className="tmr-offer">Напомнить каждые {formatInterval(offer.intervalMin)}?
+          <button type="button" className="btn sm pri" onClick={() => { requestTimerStart({ type: 'repeat', admin: offer.admin, intervalMin: offer.intervalMin }); setOffer(null); }}>Запустить</button>
+          <button type="button" className="btn sm sec" onClick={() => setOffer(null)}>Нет</button></div>}
         <div className="chipbar">
           {drugs.map(d => <button key={d.id} className="chip" onClick={() => void addDrug(d)}>{d.name}</button>)}
           <button className="chip add" onClick={() => { setPick(true); setAdding(''); }}>+ Новый в справочник</button>
@@ -57,6 +65,7 @@ export function PhaseDrugs({ c, phase, title, onSaved, emptyText }: { c: CaseRec
     </section>
     {selected && <section className="card">
       <div className="h">{selected.drugNameSnapshot}
+        <button type="button" className="link" onClick={() => requestTimerStart({ type: 'repeat', admin: selected, intervalMin: formulary?.repeatIntervalMin })}>⏱ Таймер</button>
         <button className="link" onClick={() => { if (confirm(`Убрать «${selected.drugNameSnapshot}» из карты?`)) void (async () => { onSaved('saving'); await softDelete(db.drugAdmins, 'DrugAdmin', selected.id); onSaved('saved'); })(); }}>Удалить</button></div>
       <div className="seg">{ROUTES.map(r => <button key={r} className={selected.route === r ? 'on' : ''} onClick={() => void patch(selected, { route: r })}>{ROUTE_CHIP[r]} · {r}</button>)}</div>
       <div className="g g3" style={{ marginTop: 14 }}>

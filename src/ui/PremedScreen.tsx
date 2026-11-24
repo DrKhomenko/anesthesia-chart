@@ -4,6 +4,8 @@ import { db, saveWithAudit, softDelete, newDrugAdmin, addDrugToFormulary, recalc
 import { applyBpChange, calcDose, fmt, parseNum, type DoseUnit, type ConcUnit } from '../core/logic';
 import { useCaseDraft } from './useCase';
 import { go, type SaveState } from './App';
+import { requestTimerStart } from './timerStart';
+import { formatInterval, parseIntervalMin } from '../core/timers';
 import { TimePicker, DosePicker, Field } from './pickers';
 
 export const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь'];
@@ -22,6 +24,7 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
   const [pick, setPick] = useState(false);
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState<string | null>(null);
+  const [offer, setOffer] = useState<{ admin: DrugAdmin; intervalMin: number } | null>(null);
   const pv = c?.preInductionVitals ?? {};
 
   useEffect(() => {
@@ -47,6 +50,8 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
     const row = newDrugAdmin(c, d);
     await persist(row);
     setSelId(row.id); setPick(false); setQ(''); setAdding(null);
+    const iv = parseIntervalMin(d.repeatIntervalMin);
+    setOffer(iv ? { admin: row, intervalMin: iv } : null);
   };
   const repeat = async (row: DrugAdmin) => {
     const src = drugs.find(d => d.id === row.drugId);
@@ -81,9 +86,12 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
           <span>Препарат</span><span>мг/кг</span><span>Всего, мг</span><span>мг/мл</span><span>мл</span>
           <span>Путь</span><span>Время</span><span className="hid">Кто</span></div>}
         <div className="g" style={{ gap: 8 }}>
-          {admins.map(a => <AdminRow key={a.id} a={a} on={a.id === selected?.id} onSelect={() => setSelId(a.id)} />)}
+          {admins.map(a => <AdminRow key={a.id} a={a} on={a.id === selected?.id} onSelect={() => setSelId(a.id)} onTimer={() => requestTimerStart({ type: 'repeat', admin: a, intervalMin: drugs.find(d => d.id === a.drugId)?.repeatIntervalMin })} />)}
           <button className="addrow" onClick={() => { setPick(true); setAdding(null); }}>+ Новая строка · выбрать из справочника</button>
         </div>
+        {offer && <div className="tmr-offer">Напомнить каждые {formatInterval(offer.intervalMin)}?
+          <button type="button" className="btn sm pri" onClick={() => { requestTimerStart({ type: 'repeat', admin: offer.admin, intervalMin: offer.intervalMin }); setOffer(null); }}>Запустить</button>
+          <button type="button" className="btn sm sec" onClick={() => setOffer(null)}>Нет</button></div>}
       </section>
 
       {selected && <section className="card">
@@ -172,9 +180,10 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
   </>;
 }
 
-export function AdminRow({ a, on, onSelect }: { a: DrugAdmin; on: boolean; onSelect: () => void }) {
+export function AdminRow({ a, on, onSelect, onTimer }: { a: DrugAdmin; on: boolean; onSelect: () => void; onTimer?: () => void }) {
   const unitDose = a.doseUnit === 'mcg/kg' ? 'мкг/кг' : 'мг/кг';
-  return <button type="button" className={`prow ${on ? 'on' : ''}`} onClick={onSelect}>
+  return <div className={`prow-wrap ${on ? 'on' : ''}`}>
+    <button type="button" className={`prow ${on ? 'on' : ''}`} onClick={onSelect}>
     <div style={{ paddingLeft: 6 }}><div className="pn">{a.drugNameSnapshot}{a.repeatOfId ? <span className="tag" style={{ marginLeft: 6 }}>повтор</span> : null}</div>
       <div className="pg">{a.genericNameSnapshot || unitDose}</div></div>
     <div className="pv" data-u="мг/кг">{a.doseValue || '—'}</div>
@@ -184,7 +193,9 @@ export function AdminRow({ a, on, onSelect }: { a: DrugAdmin; on: boolean; onSel
     <div data-u="путь"><span className="chip" style={{ margin: 0, background: '#2c2c2e', color: '#fff', height: 40, minHeight: 40 }}>{ROUTE_CHIP[a.route] ?? a.route}</span></div>
     <div className="pv" data-u="время">{new Date(a.givenAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</div>
     <div className="pv hid" style={{ fontSize: 15, color: '#c7c7cc' }}>{a.givenBy || '—'}</div>
-  </button>;
+    </button>
+    {onTimer && <button type="button" className="btn sm sec tmr-hit" aria-label="Таймер" onClick={onTimer}>⏱</button>}
+  </div>;
 }
 
 export function CalcCard({ a, weightKg, onPatch }: { a: DrugAdmin; weightKg: string; onPatch: (p: Partial<DrugAdmin>, reason?: string | null) => void }) {

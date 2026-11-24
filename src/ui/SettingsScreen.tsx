@@ -54,7 +54,7 @@ export function SettingsScreen({ onSaved }: { onSaved: (s: SaveState) => void })
   });
   const get = (s: Species, p: string) => th.find(t => t.species === s && t.parameter === p);
   const getL = (s: Species, p: string) => limits.find(t => t.species === s && t.parameter === p);
-  const setDrugNum = (d: Drug, k: 'minDose' | 'maxDose' | 'defaultConcentration', v: number | null) => save(() => saveWithAudit(db.drugs, 'Drug', { ...d, [k]: v }));
+  const setDrugNum = (d: Drug, k: 'minDose' | 'maxDose' | 'defaultConcentration' | 'repeatIntervalMin', v: number | null) => save(() => saveWithAudit(db.drugs, 'Drug', { ...d, [k]: v }));
 
   return <><div className="main"><div className="cols cols-eq">
     <div className="g">
@@ -90,6 +90,8 @@ export function SettingsScreen({ onSaved }: { onSaved: (s: SaveState) => void })
             <div><div className="muted small">Мин. доза</div><NumCell value={d.minDose ?? null} onSave={v => setDrugNum(d, 'minDose', v)} /></div>
             <div><div className="muted small">Макс. доза</div><NumCell value={d.maxDose ?? null} onSave={v => setDrugNum(d, 'maxDose', v)} /></div>
           </div>
+          <div><div className="muted small">Повтор, мин (таймер после введения; пусто — не предлагать)</div>
+            <NumCell value={d.repeatIntervalMin ?? null} onSave={v => setDrugNum(d, 'repeatIntervalMin', v)} /></div>
         </div>)}</div></section>
       <section className="card"><div className="h">Породы</div>
         <div className="g g2">

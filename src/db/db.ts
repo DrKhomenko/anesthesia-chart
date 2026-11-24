@@ -63,6 +63,8 @@ export interface Drug extends Syncable {
   name: string; genericName: string; defaultConcentration: number | null; concentrationUnit: ConcUnit;
   doseUnit: DoseUnit; minDose: number | null; maxDose: number | null;
   defaultRoutes: RouteRu[]; isControlled: boolean; isUserAdded: boolean; isActive: boolean;
+  /** Интервал повторного введения, мин. Пусто — клиника не задала, ничего не предлагаем. */
+  repeatIntervalMin?: number | null;
 }
 export interface ThresholdRec extends Syncable { species: Species; parameter: VitalParam; low: number | null; high: number | null; isDefaultFromPaperChart: boolean }
 export interface WeightRuleRec extends Syncable { species: Species; minKg: number | null; maxKg: number | null }
@@ -86,6 +88,8 @@ export interface ClinicSettings extends Syncable {
   localAnesthetics?: LocalAnestheticCat[];
   /** Режимы вентиляции для быстрой записи и индукции. Если не задано — стартовый набор WATO. */
   ventModes?: string[];
+  /** Через сколько минут оценивать блок. Пусто — вводится вручную при запуске таймера. */
+  blockCheckMin?: number | null;
 }
 export function clinicBlockNames(s: ClinicSettings | undefined | null): string[] {
   return regionalBlockNamesOf(s?.blockNames);
@@ -192,6 +196,22 @@ export interface RegionalBlock extends Syncable {
   guidance: BlockGuidance;
   note?: string;
 }
+export type CaseTimerKind = 'repeat' | 'once';
+export type CaseTimerStatus = 'running' | 'due' | 'stopped';
+export interface CaseTimer extends Syncable {
+  caseId: string;
+  kind: CaseTimerKind;
+  title: string;
+  drugId?: string | null;
+  drugAdminId?: string | null;
+  regionalBlockId?: string | null;
+  intervalMin?: number | null;
+  dueAt: string;
+  startedAt: string;
+  lastFiredAt?: string | null;
+  status: CaseTimerStatus;
+  stoppedAt?: string | null;
+}
 export interface EventRec extends Syncable { caseId: string; number: number; at: string; text: string }
 export interface AlarmRec extends Syncable { caseId: string; at: string; parameter: VitalParam; value: number; message: string; acknowledgedAt?: string | null }
 
@@ -203,6 +223,7 @@ export class ChartDB extends Dexie {
   breeds!: Table<Breed, string>; examLabLimits!: Table<ExamLabLimitRec, string>; clinicSettings!: Table<ClinicSettings, string>;
   devices!: Table<DeviceRec, string>; localSettings!: Table<LocalSettings, string>;
   regionalBlocks!: Table<RegionalBlock, string>;
+  caseTimers!: Table<CaseTimer, string>;
   constructor(name = 'anesthesia-chart') {
     super(name);
     this.version(1).stores({
@@ -254,6 +275,22 @@ export class ChartDB extends Dexie {
       devices: 'id, type, name, syncState, deletedAt',
       localSettings: 'id',
       regionalBlocks: 'id, caseId, syncState',
+    });
+    this.version(5).stores({
+      cases: 'id, updatedAt, date, syncState, deletedAt',
+      drugs: 'id, name, syncState, deletedAt',
+      thresholds: 'id, [species+parameter], syncState',
+      weightRules: 'id, &species, syncState',
+      audit: 'id, caseId, entityId, changedAt',
+      drugAdmins: 'id, caseId, phase, syncState', vitals: 'id, caseId, at, syncState',
+      infusions: 'id, caseId, syncState', events: 'id, caseId, at, syncState', alarms: 'id, caseId, at, syncState',
+      breeds: 'id, species, name, syncState, deletedAt',
+      examLabLimits: 'id, [species+parameter], syncState',
+      clinicSettings: 'id',
+      devices: 'id, type, name, syncState, deletedAt',
+      localSettings: 'id',
+      regionalBlocks: 'id, caseId, syncState',
+      caseTimers: 'id, caseId, syncState',
     });
   }
 }
@@ -382,6 +419,21 @@ export function newDrugAdmin(c: CaseRec, d: Drug, opts: { repeatOfId?: string | 
     note: '', repeatOfId: opts.repeatOfId ?? null, nextDueAt: null,
   };
   return recalcAdmin(row, c.weightKg);
+}
+
+/** Повтор введения: та же доза, объём и путь, время — сейчас. Этап — текущий, если это этап введения. */
+export function repeatDrugAdmin(c: CaseRec, row: DrugAdmin, opts: { givenAt?: string; phase?: DrugPhase } = {}): DrugAdmin {
+  const phases: DrugPhase[] = ['premed', 'induction', 'maintenance', 'recovery'];
+  const phase = opts.phase ?? (phases.includes(c.stage as DrugPhase) ? c.stage as DrugPhase : row.phase);
+  const next: DrugAdmin = {
+    ...meta(), caseId: c.id, drugId: row.drugId, drugNameSnapshot: row.drugNameSnapshot, genericNameSnapshot: row.genericNameSnapshot,
+    phase, doseValue: row.doseValue, doseUnit: row.doseUnit, weightKgUsed: c.weightKg || row.weightKgUsed,
+    concentration: row.concentration, concentrationUnit: row.concentrationUnit,
+    totalMg: row.totalMg, volumeMl: row.volumeMl, manualOverride: row.manualOverride, overrideReason: row.overrideReason,
+    route: row.route, givenAt: opts.givenAt ?? now(), givenBy: c.anesthesiologist || c.anesthetist || row.givenBy,
+    note: '', repeatOfId: row.repeatOfId ?? row.id, nextDueAt: null,
+  };
+  return recalcAdmin(next, c.weightKg || row.weightKgUsed);
 }
 
 /** Добавить породу (с дедупликацией по виду, реактивация скрытой). */

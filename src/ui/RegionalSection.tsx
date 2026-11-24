@@ -13,6 +13,8 @@ import {
 import { applyKeypad } from '../core/quickEntry';
 import { TimePicker, Field } from './pickers';
 import type { SaveState } from './App';
+import { requestTimerStart } from './timerStart';
+import { parseIntervalMin } from '../core/timers';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'] as const;
 const EMPTY_LINE = (): RegionalAnestheticLine => ({ name: '', concentrationPct: '', volumeMl: '' });
@@ -64,6 +66,7 @@ export function RegionalSection({ c, onSaved, compact, phase }: {
             )}
             <div className="row inf-actions">
               <button type="button" className="btn sm sec" onClick={() => setEdit(b)}>Изменить</button>
+              <button type="button" className="btn sm sec" onClick={() => requestTimerStart({ type: 'block', block: b, intervalMin: parseIntervalMin(clinic?.blockCheckMin) })}>⏱</button>
               <button type="button" className="x" aria-label="Удалить" onClick={() => {
                 if (confirm(`Убрать блокаду «${b.blockName || 'без названия'}» из карты?`)) {
                   onSaved('saving');

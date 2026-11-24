@@ -12,6 +12,9 @@ import { PrintView } from './PrintView';
 import { computeTimeline, timelineSummary, timelineCompact } from '../core/timeline';
 import { useSyncLoop } from './useSync';
 import { flushOpenCase } from './useCase';
+import { TimerBar } from './TimerBar';
+import { installReminderAudioUnlock } from './reminderAudio';
+import { requestTimerStart } from './timerStart';
 
 export const STAGES: { key: Stage; ru: string }[] = [
   { key: 'header', ru: 'Шапка' }, { key: 'premed', ru: 'Премедикация' }, { key: 'induction', ru: 'Индукция' },
@@ -50,6 +53,7 @@ export function App() {
   const online = useOnline(); const now = useClock();
   const sync = useSyncLoop(online);
   useEffect(() => { const f = () => setRoute(parseHash()); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); }, []);
+  useEffect(() => installReminderAudioUnlock(), []);
   const cur = useLiveQuery(() => (route.v === 'case' ? db.cases.get(route.id) : undefined), [route.v === 'case' ? route.id : '']);
   const stageIdx = cur ? STAGES.findIndex(s => s.key === cur.stage) : -1;
 
@@ -62,6 +66,7 @@ export function App() {
   return <div className="app">
     <div className={`top ${tlText ? 'has-dur' : ''}`}>
       {route.v !== 'list' && <button type="button" className="btn sm sec to-cards" onClick={() => void goToCaseList()}>Карты</button>}
+      {route.v === 'case' && cur && <button type="button" className="btn sm sec to-cards" onClick={() => requestTimerStart({ type: 'free' })} aria-label="Таймер">⏱</button>}
       <div className="pt"><b>{title}</b><span>{sub}</span></div>
       {route.v === 'case' ? <nav className="steps">{STAGES.map((s, i) =>
         <button key={s.key} className={s.key === route.stage ? 'on' : i < stageIdx ? 'done' : ''} onClick={() => void (async () => { await flushOpenCase(); go(`/case/${route.id}/${s.key}`); })()}>{s.ru}</button>)}</nav>
@@ -71,6 +76,7 @@ export function App() {
       {tlText && <div className="dur" title="Общая шкала времени">{timelineCompact(tl!).map(x => <span key={x}>{x}</span>)}</div>}
       <div className="clock"><span>Сейчас</span><b>{hhmm(now)}</b></div>
     </div>
+    {route.v === 'case' && cur && <TimerBar c={cur} onSaved={setSave} />}
     {route.v === 'list' && <CaseList />}
     {route.v === 'settings' && <SettingsScreen onSaved={setSave} />}
     {route.v === 'case' && (route.stage === 'header'
