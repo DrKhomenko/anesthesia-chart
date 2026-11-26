@@ -15,6 +15,7 @@ import { flushOpenCase } from './useCase';
 import { TimerBar } from './TimerBar';
 import { installReminderAudioUnlock } from './reminderAudio';
 import { requestTimerStart } from './timerStart';
+import { DictationSheet } from './DictationSheet';
 
 export const STAGES: { key: Stage; ru: string }[] = [
   { key: 'header', ru: 'Шапка' }, { key: 'premed', ru: 'Премедикация' }, { key: 'induction', ru: 'Индукция' },
@@ -50,6 +51,7 @@ export function subtitle(c: CaseRec) {
 export function App() {
   const [route, setRoute] = useState<Route>(parseHash());
   const [save, setSave] = useState<SaveState>('saved');
+  const [dictating, setDictating] = useState(false);
   const online = useOnline(); const now = useClock();
   const sync = useSyncLoop(online);
   useEffect(() => { const f = () => setRoute(parseHash()); addEventListener('hashchange', f); return () => removeEventListener('hashchange', f); }, []);
@@ -67,6 +69,7 @@ export function App() {
     <div className={`top ${tlText ? 'has-dur' : ''}`}>
       {route.v !== 'list' && <button type="button" className="btn sm sec to-cards" onClick={() => void goToCaseList()}>Карты</button>}
       {route.v === 'case' && cur && <button type="button" className="btn sm sec to-cards" onClick={() => requestTimerStart({ type: 'free' })} aria-label="Таймер">⏱</button>}
+      {route.v === 'case' && cur && <button type="button" className="btn sm sec to-cards" onClick={() => setDictating(true)} aria-label="Диктовка">🎤</button>}
       <div className="pt"><b>{title}</b><span>{sub}</span></div>
       {route.v === 'case' ? <nav className="steps">{STAGES.map((s, i) =>
         <button key={s.key} className={s.key === route.stage ? 'on' : i < stageIdx ? 'done' : ''} onClick={() => void (async () => { await flushOpenCase(); go(`/case/${route.id}/${s.key}`); })()}>{s.ru}</button>)}</nav>
@@ -77,6 +80,7 @@ export function App() {
       <div className="clock"><span>Сейчас</span><b>{hhmm(now)}</b></div>
     </div>
     {route.v === 'case' && cur && <TimerBar c={cur} onSaved={setSave} />}
+    {route.v === 'case' && cur && dictating && <DictationSheet c={cur} onClose={() => setDictating(false)} onSaved={setSave} />}
     {route.v === 'list' && <CaseList />}
     {route.v === 'settings' && <SettingsScreen onSaved={setSave} />}
     {route.v === 'case' && (route.stage === 'header'

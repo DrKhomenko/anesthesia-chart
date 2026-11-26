@@ -10,6 +10,14 @@ export async function flushOpenCase(): Promise<void> {
   if (flusher) await flusher();
 }
 
+/** Правка открытой карты снаружи экрана (диктовка): идёт через тот же черновик, чтобы экран её не затёр. */
+let patcher: ((fn: (c: CaseRec) => Partial<CaseRec>) => void) | null = null;
+export function patchOpenCase(fn: (c: CaseRec) => Partial<CaseRec>): boolean {
+  if (!patcher) return false;
+  patcher(fn);
+  return true;
+}
+
 /** Карта в памяти + автосохранение в IndexedDB через 400 мс после правки. */
 export function useCaseDraft(id: string, onSaved: (state: 'saving' | 'saved') => void) {
   const [c, setC] = useState<CaseRec | null>(null);
@@ -40,5 +48,11 @@ export function useCaseDraft(id: string, onSaved: (state: 'saving' | 'saved') =>
     latest.current = { ...latest.current, ...patch }; setC(latest.current); onSaved('saving');
     window.clearTimeout(timer.current); timer.current = window.setTimeout(() => { void flushRef.current(); }, 400);
   };
+  const updateRef = useRef(update);
+  updateRef.current = update;
+  useEffect(() => {
+    patcher = fn => { if (latest.current) updateRef.current(fn(latest.current)); };
+    return () => { patcher = null; };
+  }, [id]);
   return { c, update, flush };
 }

@@ -451,3 +451,32 @@ table.vtable tbody tr.on td:last-child{border-radius:0 10px 10px 0}
   .tmr-banner{margin:8px 10px 0}
   .tmr-chip span{font-size:15px}
 }
+
+/* Диктовка событий: предпросмотр под строкой «Голосом» */
+.dc-review{display:flex;flex-direction:column;gap:6px}
+.dc-time{margin:0}
+.dc-items{display:flex;flex-direction:column;gap:4px}
+.dc-item{display:flex;align-items:center;gap:6px;min-height:36px}
+.dc-item.off{opacity:.4}
+.dc-item.off .dc-hit{text-decoration:line-through}
+.dc-main{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.dc-hit{font-size:15px}
+.dc-flag{font-size:12px;font-weight:600}
+.dc-x{flex:0 0 auto;width:40px;height:36px;border-radius:10px;background:#2c2c2e;color:#c7c7cc;font-size:16px}
+.dc-phase{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dc-seg{display:flex;flex:1;min-width:0}
+.dc-seg button{flex:1;padding:0 8px;font-size:13px;min-height:34px;height:34px;white-space:nowrap}
+.dc-save{margin-top:6px;align-self:flex-start;min-height:44px}
+.dc-sheet{max-height:calc(100vh - 40px)}
+.dc-sheet .qe-voice{flex-shrink:0}
+.dc-body{display:flex;flex-direction:column;gap:8px;min-height:60px}
+.dc-actions{display:flex;gap:10px;align-items:center}
+.dc-note{line-height:1.3}
+@media (max-width:760px){
+  .dc-hit{font-size:14px}
+  .dc-phase{flex-direction:column;align-items:stretch;gap:4px}
+  .dc-actions{flex-wrap:wrap}
+  .dc-note{flex:1 0 100%}
+  .dc-actions .btn.sec{flex:0 0 auto}
+  .dc-actions .btn.pri{flex:1}
+}

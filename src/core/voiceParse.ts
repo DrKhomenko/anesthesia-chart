@@ -172,7 +172,7 @@ function formatVoiceNumber(n: number): string {
   return fmt(n, 3);
 }
 
-function tokenize(normalized: string): string[] {
+export function tokenize(normalized: string): string[] {
   if (!normalized) return [];
   return normalized.split(/[\s]+/).map(t => t.replace(/^[.,]+|[.,]+$/g, '')).filter(Boolean);
 }

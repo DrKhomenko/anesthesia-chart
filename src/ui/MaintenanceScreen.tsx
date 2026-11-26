@@ -12,6 +12,7 @@ import { ConfirmReading, type ConfirmState } from './ConfirmReading';
 import { QuickEntrySheet, type QuickEntryState } from './QuickEntrySheet';
 import { Field, TimePicker } from './pickers';
 import { useCaseDraft } from './useCase';
+import { saveDictation } from './dictationSave';
 import { go, type SaveState } from './App';
 import { fieldsFor, type DeviceType } from '../core/devices';
 import { entryFieldOrder, previousTick, previousWithInductionMode } from '../core/quickEntry';
@@ -45,6 +46,8 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
   }, [id]) ?? [];
   const devices = useLiveQuery(() => db.devices.filter(d => !d.deletedAt && d.isActive).toArray(), []) ?? [];
   const clinic = useLiveQuery(() => db.clinicSettings.get(CLINIC_SETTINGS_ID), []);
+  const formulary = useLiveQuery(() => db.drugs.filter(d => !d.deletedAt && d.isActive).toArray(), []) ?? [];
+  const formularyRefs = formulary.map(d => ({ id: d.id, name: d.name, genericName: d.genericName }));
 
   const [loc, setLoc] = useState<LocalSettings | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
@@ -351,6 +354,7 @@ export function MaintenanceScreen({ id, onSaved }: { id: string; onSaved: (s: Sa
   {align && <ScreenAlign src={align.dataUrl} initialQuad={align.initialQuad} onCancel={() => setAlign(null)} onConfirm={q => void afterAlign(q)} />}
   {confirm && <ConfirmReading state={confirm} onCancel={() => setConfirm(null)} onConfirm={(v, at) => void confirmSave(v, at)} />}
   {quick && <QuickEntrySheet state={quick} onCancel={() => setQuick(null)} onConfirm={(p, at) => void saveQuickEntry(p, at)}
-    onGasChange={g => { update({ maintenanceGas: g }); setQuick(s => s ? { ...s, gas: g } : s); }} />}
+    onGasChange={g => { update({ maintenanceGas: g }); setQuick(s => s ? { ...s, gas: g } : s); }}
+    dictation={{ c, drugs: formularyRefs, save: async (items, phase, at) => { onSaved('saving'); await saveDictation({ c, items, phase, at }); onSaved('saved'); } }} />}
   </>;
 }

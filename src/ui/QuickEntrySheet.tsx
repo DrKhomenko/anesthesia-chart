@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { VitalFields } from '../db/db';
+import type { CaseRec, DrugPhase, VitalFields } from '../db/db';
 import {
   applyKeypad, copyAllPrevious, emptyDraft, entryDraftToPatch, effectiveFieldValue,
   formatPrevious, isEntryOutOfRange, syncDraftMap, withGasField,
@@ -11,6 +11,9 @@ import { FIELD_TO_GAS, GAS_FIELD, GAS_RU } from '../core/gas';
 import { DEFAULT_VENT_MODES, modesForPicker } from '../core/ventModes';
 import { TimePicker } from './pickers';
 import { parseVoiceInput, VOICE_HINT, VOICE_PLACEHOLDER } from '../core/voiceParse';
+import { parseDictation, type DictDrugRef, type DictItem } from '../core/dictation';
+import { defaultPhase } from '../core/dictationApply';
+import { DictationReview } from './DictationReview';
 
 export interface QuickEntryState {
   at: string;
@@ -26,11 +29,19 @@ export interface QuickEntryState {
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'] as const;
 
-export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
+/** Диктовка событий в той же строке «Голосом»: кличка, препараты, интубация… Показатели по-прежнему уходят в поля минуты. */
+export interface QuickDictation {
+  c: CaseRec;
+  drugs: DictDrugRef[];
+  save: (items: DictItem[], phase: DrugPhase, at: string) => Promise<void>;
+}
+
+export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange, dictation }: {
   state: QuickEntryState;
   onCancel: () => void;
   onConfirm: (patch: Partial<VitalFields>, at: string) => void;
   onGasChange?: (gas: GasId) => void;
+  dictation?: QuickDictation;
 }) {
   const [gas, setGas] = useState<GasId | null>(state.gas ?? null);
   const allFields = useMemo(() => gas ? withGasField(state.fields, gas) : state.fields.filter(f => !FIELD_TO_GAS[f.key]), [state.fields, gas]);
@@ -47,6 +58,14 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
   const [voiceParsed, setVoiceParsed] = useState<{ values: Record<string, string>; unknown: string[] } | null>(null);
   const [voiceKeys, setVoiceKeys] = useState<Set<string>>(() => new Set());
   const lastParsedVoice = useRef('');
+  const [dictItems, setDictItems] = useState<DictItem[]>([]);
+  const [dictRemoved, setDictRemoved] = useState<Set<number>>(() => new Set());
+  const [dictPhase, setDictPhase] = useState<DrugPhase>('maintenance');
+  const [dictPhaseTouched, setDictPhaseTouched] = useState(false);
+  const [dictAt, setDictAt] = useState(() => new Date().toISOString());
+  const [dictRest, setDictRest] = useState('');
+  const [dictSaving, setDictSaving] = useState(false);
+  const dictStarted = useRef<string | null>(null);
   const needGas = !gas;
   const field = needGas ? null : (fields[idx] ?? fields[0]);
   const raw = field ? (draft[field.key] ?? '') : '';
@@ -133,8 +152,13 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
     const t = text.trim();
     if (!force && t === lastParsedVoice.current) return;
     lastParsedVoice.current = t;
-    if (t === '') { setVoiceParsed(null); return; }
-    const result = parseVoiceInput(t, { allowedKeys: allowedVoiceKeys, ventModes: modeOptions });
+    if (t === '') { setVoiceParsed(null); setDictItems([]); setDictRest(''); return; }
+    const dict = dictation ? parseDictation(t, { drugs: dictation.drugs }) : null;
+    if (dict) {
+      setDictItems(dict.items); setDictRemoved(new Set()); setDictRest(dict.rest);
+      if (!dictPhaseTouched) setDictPhase(defaultPhase(dictation!.c.stage, dict.items));
+    }
+    const result = parseVoiceInput(dict ? dict.rest : t, { allowedKeys: allowedVoiceKeys, ventModes: modeOptions });
     setVoiceParsed({ values: result.values, unknown: result.unknown });
     const gasHit: GasId | null = result.values.sevoPct != null ? 'sevo' : result.values.isoPct != null ? 'iso' : null;
     if (gasHit && gas !== gasHit) switchGas(gasHit);
@@ -162,9 +186,21 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
   };
 
   useEffect(() => {
+    if (voiceText.trim() && !dictStarted.current) { dictStarted.current = new Date().toISOString(); setDictAt(dictStarted.current); }
     const id = window.setTimeout(() => applyVoice(voiceText), 700);
     return () => window.clearTimeout(id);
   }, [voiceText]); // пауза после ввода; ключи и режимы берутся из текущего замыкания
+
+  const dictKeep = dictItems.filter((_, k) => !dictRemoved.has(k));
+  const saveDict = async () => {
+    if (!dictation || dictSaving || dictKeep.length === 0) return;
+    setDictSaving(true);
+    try { await dictation.save(dictKeep, dictPhase, dictAt); } finally { setDictSaving(false); }
+    // события записаны; в строке остаётся только то, что относится к показателям
+    setDictItems([]); setDictRemoved(new Set()); dictStarted.current = null; setDictPhaseTouched(false);
+    lastParsedVoice.current = dictRest.trim();
+    setVoiceText(dictRest);
+  };
 
   const ghost = !!field && fieldTouch === 'untouched' && raw === '' && prevText !== '' && !autoMap;
   const display = field ? (autoMap ? (fmt(calcMap(effSys, effDia) as number, 0) || effective || '—') : (effective || '—')) : '';
@@ -176,7 +212,7 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
         <TimePicker label="Время" value={at} onChange={setAt} />
       </div>
       {state.mergeNote && <div className="note" style={{ marginBottom: 8 }}>{state.mergeNote}</div>}
-      <form className={`qe-voice ${voiceParsed && (Object.keys(voiceParsed.values).length || voiceParsed.unknown.length) ? 'has-result' : ''}`} onSubmit={e => { e.preventDefault(); applyVoice(voiceText, true); }}>
+      <form className={`qe-voice ${(voiceParsed && (Object.keys(voiceParsed.values).length || voiceParsed.unknown.length)) || dictItems.length ? 'has-result' : ''}`} onSubmit={e => { e.preventDefault(); applyVoice(voiceText, true); }}>
         <label className="qe-voice-lab" htmlFor="qe-voice">Голосом</label>
         <div className="qe-voice-row">
           <input id="qe-voice" type="text" lang="ru" inputMode="text" enterKeyHint="done"
@@ -187,6 +223,15 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
           <button type="submit" className="btn sm sec">Разобрать</button>
         </div>
         <div className="muted small qe-voice-hint">{VOICE_HINT}</div>
+        {dictation && dictItems.length > 0 && (
+          <div className="qe-voice-review">
+            <DictationReview c={dictation.c} items={dictItems} removed={dictRemoved} phase={dictPhase} at={dictAt}
+              onPhase={p => { setDictPhase(p); setDictPhaseTouched(true); }}
+              onToggle={k => setDictRemoved(s => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; })} />
+            <button type="button" className="btn pri dc-save" disabled={dictSaving || dictKeep.length === 0} onClick={() => void saveDict()}>
+              Записать в карту ({dictKeep.length})</button>
+          </div>
+        )}
         {voiceParsed && (Object.keys(voiceParsed.values).length > 0 || voiceParsed.unknown.length > 0) && (
           <div className="qe-voice-review">
             {Object.keys(voiceParsed.values).length > 0 && (

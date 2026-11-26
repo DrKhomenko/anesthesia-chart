@@ -7,6 +7,7 @@ import { go, type SaveState } from './App';
 import { requestTimerStart } from './timerStart';
 import { formatInterval, parseIntervalMin } from '../core/timers';
 import { TimePicker, DosePicker, Field } from './pickers';
+import { hasNoDoseFlag } from '../core/dictationApply';
 
 export const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь'];
 export const CONC: Record<ConcUnit, string> = { 'mg/ml': 'мг/мл', 'mcg/ml': 'мкг/мл', percent: '%' };
@@ -184,7 +185,7 @@ export function AdminRow({ a, on, onSelect, onTimer }: { a: DrugAdmin; on: boole
   const unitDose = a.doseUnit === 'mcg/kg' ? 'мкг/кг' : 'мг/кг';
   return <div className={`prow-wrap ${on ? 'on' : ''}`}>
     <button type="button" className={`prow ${on ? 'on' : ''}`} onClick={onSelect}>
-    <div style={{ paddingLeft: 6 }}><div className="pn">{a.drugNameSnapshot}{a.repeatOfId ? <span className="tag" style={{ marginLeft: 6 }}>повтор</span> : null}</div>
+    <div style={{ paddingLeft: 6 }}><div className="pn">{a.drugNameSnapshot}{a.repeatOfId ? <span className="tag" style={{ marginLeft: 6 }}>повтор</span> : null}{hasNoDoseFlag(a) ? <span className="tag o" style={{ marginLeft: 6 }}>доза не указана</span> : null}</div>
       <div className="pg">{a.genericNameSnapshot || unitDose}</div></div>
     <div className="pv" data-u="мг/кг">{a.doseValue || '—'}</div>
     <div className="pv" data-u="всего, мг">{a.totalMg != null ? fmt(a.totalMg, 3) : '—'}</div>
