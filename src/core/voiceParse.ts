@@ -8,16 +8,16 @@ export const VOICE_DICT = {
     hr: ['чсс', 'пульс', 'частота сердечных сокращений', 'частота сердечных', 'сердцебиение', 'сердце', 'heart rate', 'hr'],
     pr: ['пульс spo2', 'пульс спо2', 'пульс спо', 'пульс оксиметра', 'pulse rate', 'pr'],
     spo2: ['сатурация кислорода', 'сатурация со2', 'сатурация spo2', 'сатурация', 'насыщение кислородом', 'насыщение', 'спо2', 'spo2', 'spo 2', 'sp o 2', 'эс пи о два', 'эс пи о 2'],
-    etco2: ['капнография', 'капно', 'энд тайдал', 'выдыхаемый со2', 'етсо2', 'этсо2', 'etco2', 'et co2', 'et co 2', 'со2', 'цо2', 'co2'],
+    etco2: ['углекислый газ', 'углекислота', 'углекислый', 'капнография', 'капно', 'энд тайдал', 'выдыхаемый со2', 'етсо2', 'этсо2', 'etco2', 'et co2', 'et co 2', 'со2', 'цо2', 'co2'],
     rr: ['частота дыхательных движений', 'частота дыхания', 'чдд', 'чд', 'дыхание', 'resp rate', 'rr'],
     tempC: ['температура', 'темпа', 'тэ', 'градусы', 't1', 't2', 'temp'],
-    nibpSys: ['сад', 'систола', 'систолическое давление', 'систолическое', 'ад сист', 'верхнее давление', 'верхнее'],
-    nibpDia: ['дад', 'диастола', 'диастолическое давление', 'диастолическое', 'ад диаст', 'нижнее давление', 'нижнее'],
-    nibpMap: ['мад', 'среднее давление', 'среднее ад', 'ад ср', 'среднее'],
+    nibpSys: ['систолическое артериальное давление', 'сад', 'систола', 'систолическое давление', 'систолическое', 'систолическая', 'систолический', 'ад сист', 'верхнее давление', 'верхнее'],
+    nibpDia: ['диастолическое артериальное давление', 'дад', 'диастола', 'диастолическое давление', 'диастолическое', 'диастолическая', 'диастолический', 'ад диаст', 'нижнее давление', 'нижнее'],
+    nibpMap: ['среднее артериальное давление', 'мад', 'среднее давление', 'средняя', 'среднее ад', 'ад ср', 'среднее'],
     sevoPct: ['севофлуран', 'севофлюран', 'сево', 'sevoflurane', 'sevo'],
     isoPct: ['изофлуран', 'изофлюран', 'изо', 'isoflurane', 'iso'],
     fio2: ['кислород', 'кислорода', 'доля кислорода', 'fio2', 'fi o2', 'fi o 2', 'фио2', 'фи о 2', 'o2', 'о2'],
-    pPeak: ['пиковое давление', 'давление пик', 'pпик', 'рпик', 'пипик', 'ppeak', 'p peak', 'pip', 'пик'],
+    pPeak: ['давление на пике вдоха', 'давление на пике', 'пиковое давление', 'давление пик', 'на пике', 'pпик', 'рпик', 'пипик', 'ppeak', 'p peak', 'pip', 'пиковое', 'пик'],
     vtInsp: ['дыхательный объем', 'дыхательный объём', 'объем вдоха', 'объём вдоха', 'tidal volume', 'vt', 'вт'],
     ventMode: ['режим вентиляции', 'режим ивл', 'режим'],
     peep: ['peep'],
@@ -177,6 +177,37 @@ export function tokenize(normalized: string): string[] {
   return normalized.split(/[\s]+/).map(t => t.replace(/^[.,]+|[.,]+$/g, '')).filter(Boolean);
 }
 
+/** Дешёвое снятие падежа/рода: «систолическая» = «систолическое», «пике» = «пик». Короткие союзы не трогаем. */
+const VOICE_SUFFIXES = [
+  'тельными', 'тельного', 'тельному', 'тельных', 'тельной', 'тельное', 'тельная', 'тельный', 'тельные',
+  'ческими', 'ческого', 'ческому', 'ческих', 'ческой', 'ческое', 'ческая', 'ческий', 'ческие',
+  'ескими', 'еского', 'ескому', 'еских', 'еской', 'еское', 'еская', 'еский', 'еские',
+  'ского', 'скому', 'ская', 'ское', 'ский', 'ские', 'ских', 'ской',
+  'ного', 'ному', 'ная', 'ное', 'ный', 'ные', 'ных', 'ной', 'ную', 'ными',
+  'ого', 'ему', 'ому', 'ыми', 'ими', 'ами', 'ями',
+  'ая', 'ое', 'ие', 'ые', 'ой', 'ый', 'ий', 'ую', 'юю', 'ее', 'яя',
+  'ов', 'ев', 'ей', 'ах', 'ях', 'ом', 'ем', 'ам', 'ям', 'ых', 'их', 'ым', 'им',
+  'ия', 'ий', 'ие', 'ью', 'ию',
+];
+
+export function foldVoiceToken(w: string): string {
+  const s = w.replace(/ё/g, 'е');
+  if (s.length <= 4) return s;
+  for (const suf of VOICE_SUFFIXES) {
+    if (s.length - suf.length >= 4 && s.endsWith(suf)) return s.slice(0, -suf.length);
+  }
+  return s;
+}
+
+export function voiceTokensEqual(a: string, b: string): boolean {
+  if (a === b) return true;
+  const fa = foldVoiceToken(a), fb = foldVoiceToken(b);
+  if (fa === fb) return true;
+  const [sh, lo] = fa.length <= fb.length ? [fa, fb] : [fb, fa];
+  if (sh.length >= 3 && lo.startsWith(sh) && /^(е|а|у|и|ы|й|ой|ом|ах|ам)?$/.test(lo.slice(sh.length))) return true;
+  return false;
+}
+
 /** Склеивает слова числительных в одно число, включая «два и один» и «два запятая один». */
 export function consumeRuNumber(tokens: string[], start: number): { value: number; end: number } | null {
   if (start >= tokens.length) return null;
@@ -268,10 +299,14 @@ function consumeDecimal(tokens: string[], i: number, allowI: boolean): { frac: n
 
 function buildPhrases(ventModes: string[]): Phrase[] {
   const out: Phrase[] = [];
-  const add = (phrase: string, key: string) => {
+  const add = (phrase: string, key: string, alsoReverse = true) => {
     const words = tokenize(normalizeVoiceText(phrase));
     if (!words.length) return;
     out.push({ words, key, sort: words.length * 100 + words.join(' ').length });
+    // «объём дыхательный» = «дыхательный объём»
+    if (alsoReverse && words.length === 2 && words[0] !== words[1]) {
+      out.push({ words: [words[1], words[0]], key, sort: words.length * 100 + words.join(' ').length - 1 });
+    }
   };
   for (const [key, aliases] of Object.entries(VOICE_DICT.fields)) {
     for (const a of aliases) add(a, `field:${key}`);
@@ -291,7 +326,7 @@ function matchPhrase(tokens: string[], i: number, phrases: Phrase[]): Phrase | n
     if (i + p.words.length > tokens.length) continue;
     let ok = true;
     for (let k = 0; k < p.words.length; k++) {
-      if (tokens[i + k] !== p.words[k]) { ok = false; break; }
+      if (!voiceTokensEqual(tokens[i + k], p.words[k])) { ok = false; break; }
     }
     if (ok) return p;
   }
@@ -352,6 +387,47 @@ function skipNoise(tokens: string[], i: number): number {
     const n = isFiller(tokens, j);
     if (n === 0) break;
     j += n;
+  }
+  return j;
+}
+
+const BP_TAILS: string[][] = [
+  ['артериальное', 'давление'],
+  ['кровяное', 'давление'],
+  ['давление'],
+  ['ад'],
+];
+
+/** После «систолическая» пропускаем «артериальное давление», само значение не теряем. */
+function skipBpTail(tokens: string[], i: number): number {
+  for (const words of BP_TAILS) {
+    if (i + words.length > tokens.length) continue;
+    if (words.every((w, k) => voiceTokensEqual(tokens[i + k], w))) return i + words.length;
+  }
+  return i;
+}
+
+/**
+ * До трёх лишних слов между именем поля и числом («давление на пике доходе 17»).
+ * Другое имя поля не перескакиваем, чтобы не забрать чужое число.
+ */
+function skipTowardNumber(
+  tokens: string[],
+  i: number,
+  phrases: Phrase[],
+  onUnknown: (word: string) => void,
+): number {
+  let j = i;
+  let skipped = 0;
+  while (j < tokens.length && skipped < 3) {
+    if (consumeRuNumber(tokens, j)) break;
+    if (matchPhrase(tokens, j, phrases)) break;
+    if (tokens[j] === 'на' || tokens[j] === '/') break;
+    const fill = isFiller(tokens, j);
+    if (fill) { j += fill; continue; }
+    onUnknown(tokens[j]);
+    j += 1;
+    skipped += 1;
   }
   return j;
 }
@@ -452,10 +528,16 @@ export function parseVoiceInput(text: string, opts: VoiceParseOptions = {}): Voi
           setBp(pair.sys, pair.dia, rawFrom(i));
           continue;
         }
+        i = skipBpTail(tokens, i);
       }
 
       i = skipNoise(tokens, i);
-      const num = consumeRuNumber(tokens, i);
+      let num = consumeRuNumber(tokens, i);
+      if (!num) {
+        const j = skipTowardNumber(tokens, i, phrases, w => { flushUnknown(pending, unknown); unknown.push(w); });
+        i = j;
+        num = consumeRuNumber(tokens, i);
+      }
       if (num) {
         let end = skipUnits(tokens, num.end);
         // «сево 1 мак» — не переводим МАК в проценты

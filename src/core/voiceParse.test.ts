@@ -205,3 +205,40 @@ describe('справочник покрывает поля минуты', () => 
     }
   });
 });
+
+describe('parseVoiceInput — живая диктовка и устойчивость', () => {
+  it('фраза с телефона: углекислый газ, ЧДД, САД/ДАД, пик, обратный объём', () => {
+    const r = parseVoiceInput(
+      'ЧСС 94 сатурация 99 углекислый газ 30 частота дыхательная движение 12 систолическая артериальное давление 152 диастолическая 47 давление на пике 17 объем дыхательный 173',
+      DEFAULT,
+    );
+    expect(r.values).toEqual({
+      hr: '94', spo2: '99', etco2: '30', rr: '12',
+      nibpSys: '152', nibpDia: '47', pPeak: '17', vtInsp: '173',
+    });
+    expect(r.mapManual).toBe(false);
+  });
+
+  it('лишнее слово в середине не съедает то, что после него', () => {
+    const r = parseVoiceInput('пульс 94 непонятное сатурация 99 углекислый газ 30', DEFAULT);
+    expect(r.values).toEqual({ hr: '94', spo2: '99', etco2: '30' });
+    expect(r.unknown.join(' ')).toMatch(/непонятное/);
+    expect(r.unknown.join(' ')).not.toMatch(/30/);
+    expect(r.unknown.join(' ')).not.toMatch(/сатурация/);
+  });
+
+  it('род и обратный порядок: систолическая, диастолическая, объём дыхательный, углекислота', () => {
+    expect(parseVoiceInput('углекислота 30', DEFAULT).values.etco2).toBe('30');
+    expect(parseVoiceInput('углекислый 28', DEFAULT).values.etco2).toBe('28');
+    expect(parseVoiceInput('систолический 120 диастолическая 80', DEFAULT).values).toMatchObject({ nibpSys: '120', nibpDia: '80' });
+    expect(parseVoiceInput('средняя 90', DEFAULT).values.nibpMap).toBe('90');
+    expect(parseVoiceInput('объём дыхательный 173', DEFAULT).values.vtInsp).toBe('173');
+    expect(parseVoiceInput('пиковое 17', DEFAULT).values.pPeak).toBe('17');
+  });
+
+  it('давление на пике с лишним «доходе» всё равно берёт число', () => {
+    const r = parseVoiceInput('давление на пике доходе 17', DEFAULT);
+    expect(r.values.pPeak).toBe('17');
+    expect(r.unknown.join(' ')).toMatch(/доходе/);
+  });
+});
