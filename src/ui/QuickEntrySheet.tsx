@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { VitalFields } from '../db/db';
 import {
   applyKeypad, copyAllPrevious, emptyDraft, entryDraftToPatch, effectiveFieldValue,
@@ -10,6 +10,7 @@ import type { GasId } from '../core/gas';
 import { FIELD_TO_GAS, GAS_FIELD, GAS_RU } from '../core/gas';
 import { DEFAULT_VENT_MODES, modesForPicker } from '../core/ventModes';
 import { TimePicker } from './pickers';
+import { parseVoiceInput, VOICE_HINT, VOICE_PLACEHOLDER } from '../core/voiceParse';
 
 export interface QuickEntryState {
   at: string;
@@ -42,6 +43,10 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
   const [draft, setDraft] = useState(() => ({ ...emptyDraft(entryFieldOrderSafe(state.fields)), ...(state.initialDraft ?? {}) }));
   const [touch, setTouch] = useState<Record<string, FieldTouch>>({});
   const [mapManual, setMapManual] = useState(!!state.mapManual);
+  const [voiceText, setVoiceText] = useState('');
+  const [voiceParsed, setVoiceParsed] = useState<{ values: Record<string, string>; unknown: string[] } | null>(null);
+  const [voiceKeys, setVoiceKeys] = useState<Set<string>>(() => new Set());
+  const lastParsedVoice = useRef('');
   const needGas = !gas;
   const field = needGas ? null : (fields[idx] ?? fields[0]);
   const raw = field ? (draft[field.key] ?? '') : '';
@@ -123,6 +128,44 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
     setDraft(s => ({ ...s, ventMode: v }));
   };
 
+  const allowedVoiceKeys = useMemo(() => allFields.map(f => f.key), [allFields]);
+  const applyVoice = (text: string, force = false) => {
+    const t = text.trim();
+    if (!force && t === lastParsedVoice.current) return;
+    lastParsedVoice.current = t;
+    if (t === '') { setVoiceParsed(null); return; }
+    const result = parseVoiceInput(t, { allowedKeys: allowedVoiceKeys, ventModes: modeOptions });
+    setVoiceParsed({ values: result.values, unknown: result.unknown });
+    const gasHit: GasId | null = result.values.sevoPct != null ? 'sevo' : result.values.isoPct != null ? 'iso' : null;
+    if (gasHit && gas !== gasHit) switchGas(gasHit);
+    const keys = Object.keys(result.values);
+    if (!keys.length) return;
+    setDraft(s => {
+      let next = { ...s, ...result.values };
+      if ('nibpSys' in result.values || 'nibpDia' in result.values || result.mapManual) {
+        next = syncDraftMap(next, result.mapManual);
+      }
+      return next;
+    });
+    setTouch(s => {
+      const next = { ...s };
+      for (const k of keys) next[k] = 'edited';
+      return next;
+    });
+    if (result.mapManual) setMapManual(true);
+    else if ('nibpSys' in result.values || 'nibpDia' in result.values) setMapManual(false);
+    const highlight = new Set(keys);
+    if (('nibpSys' in result.values || 'nibpDia' in result.values) && !result.mapManual) highlight.add('nibpMap');
+    setVoiceKeys(highlight);
+    const jump = fields.findIndex(f => highlight.has(f.key));
+    if (jump >= 0) setIdx(jump);
+  };
+
+  useEffect(() => {
+    const id = window.setTimeout(() => applyVoice(voiceText), 700);
+    return () => window.clearTimeout(id);
+  }, [voiceText]); // пауза после ввода; ключи и режимы берутся из текущего замыкания
+
   const ghost = !!field && fieldTouch === 'untouched' && raw === '' && prevText !== '' && !autoMap;
   const display = field ? (autoMap ? (fmt(calcMap(effSys, effDia) as number, 0) || effective || '—') : (effective || '—')) : '';
 
@@ -133,6 +176,32 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
         <TimePicker label="Время" value={at} onChange={setAt} />
       </div>
       {state.mergeNote && <div className="note" style={{ marginBottom: 8 }}>{state.mergeNote}</div>}
+      <form className={`qe-voice ${voiceParsed && (Object.keys(voiceParsed.values).length || voiceParsed.unknown.length) ? 'has-result' : ''}`} onSubmit={e => { e.preventDefault(); applyVoice(voiceText, true); }}>
+        <label className="qe-voice-lab" htmlFor="qe-voice">Голосом</label>
+        <div className="qe-voice-row">
+          <input id="qe-voice" type="text" lang="ru" inputMode="text" enterKeyHint="done"
+            autoFocus autoComplete="off" autoCorrect="on" autoCapitalize="sentences" spellCheck
+            placeholder={VOICE_PLACEHOLDER} value={voiceText}
+            onChange={e => setVoiceText(e.target.value)}
+            aria-label="Голосом" />
+          <button type="submit" className="btn sm sec">Разобрать</button>
+        </div>
+        <div className="muted small qe-voice-hint">{VOICE_HINT}</div>
+        {voiceParsed && (Object.keys(voiceParsed.values).length > 0 || voiceParsed.unknown.length > 0) && (
+          <div className="qe-voice-review">
+            {Object.keys(voiceParsed.values).length > 0 && (
+              <div className="qe-voice-hits">
+                {allFields.filter(f => voiceParsed.values[f.key] != null).map(f =>
+                  <span key={f.key} className="qe-voice-hit">{f.label} {voiceParsed.values[f.key]}{f.unit ? ` ${f.unit}` : ''}</span>)}
+              </div>
+            )}
+            {voiceParsed.unknown.length > 0 && (
+              <div className="qe-voice-unk">не понял: {voiceParsed.unknown.join('; ')}</div>
+            )}
+            <div className="muted small">проверьте и нажмите «Далее» — само не сохраняется</div>
+          </div>
+        )}
+      </form>
       <div className="qe-gas">
         <span className="muted small">Газ</span>
         <div className="seg qe-gas-seg">
@@ -165,7 +234,7 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange }: {
         </div>}
         <div className="qe-body">
           <div className="qe-fl">{field.label}{field.unit ? ` · ${field.unit}` : ''}{FIELD_TO_GAS[field.key] ? ` · ${GAS_RU[FIELD_TO_GAS[field.key]]}` : ''}</div>
-          <div className={`qe-val ${ghost ? 'ghost' : ''} ${oor && effective ? 'warn' : ''}`} aria-live="polite">
+          <div className={`qe-val ${ghost ? 'ghost' : ''} ${!ghost && voiceKeys.has(field.key) ? 'voice' : ''} ${oor && effective ? 'warn' : ''}`} aria-live="polite">
             {display || '—'}
           </div>
           {oor && effective && <div className="lh w qe-hint">вне рамки {field.min ?? '…'}–{field.max ?? '…'}</div>}

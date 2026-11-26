@@ -279,7 +279,7 @@ table.vtable tbody tr.on td:last-child{border-radius:0 10px 10px 0}
 
 
 /* Быстрый ввод минуты */
-.qe-sheet{display:flex;flex-direction:column;min-height:0}
+.qe-sheet{display:flex;flex-direction:column;min-height:0;overflow:hidden;max-height:86vh}
 .qe-all{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-shrink:0;flex-wrap:wrap}
 .qe-body{flex:1;min-height:0;display:flex;flex-direction:column}
 .qe-fl{font-size:15px;color:var(--mut);font-weight:600;text-align:center;letter-spacing:.4px;text-transform:uppercase}
@@ -394,6 +394,36 @@ table.vtable tbody tr.on td:last-child{border-radius:0 10px 10px 0}
   .reg-keys{gap:6px}
 }
 
+
+.qe-voice{display:flex;flex-direction:column;gap:6px;margin:0 0 10px;flex-shrink:0}
+.qe-voice-lab{font-size:13px;letter-spacing:.4px;text-transform:uppercase;color:var(--mut);font-weight:600}
+.qe-voice-row{display:flex;gap:8px;align-items:stretch}
+.qe-voice-row input{flex:1;min-width:0;min-height:52px;background:var(--field);border-radius:12px;padding:8px 14px;font-size:20px;font-weight:600;border:1.5px solid transparent}
+.qe-voice-row input:focus{border-color:var(--cyan)}
+.qe-voice-row input::placeholder{color:#48484a;font-weight:500;font-size:15px}
+.qe-voice-row .btn{flex:0 0 auto;min-width:108px;align-self:stretch}
+.qe-voice-hint{text-align:left;margin:0;line-height:1.35}
+.qe-voice-review{display:flex;flex-direction:column;gap:6px}
+.qe-voice-hits{display:flex;flex-wrap:wrap;gap:6px}
+.qe-voice-hit{background:rgba(100,210,255,.14);color:var(--cyan);border-radius:10px;padding:5px 10px;font-size:14px;font-weight:600}
+.qe-voice-unk{color:var(--orange);font-size:14px;font-weight:600;line-height:1.35}
+.qe-val.voice{color:var(--cyan)}
+.qe-voice.has-result .qe-voice-hint{display:none}
+@media (max-width:600px){
+  .qe-voice{gap:4px;margin:0 0 8px}
+  .qe-voice-row input{font-size:17px;min-height:44px;padding:6px 12px}
+  .qe-voice-row input::placeholder{font-size:13px}
+  .qe-voice-row .btn{min-width:96px;min-height:44px;font-size:15px;padding:0 12px}
+  .qe-voice-hint{font-size:12px}
+  .qe-voice-hit{padding:3px 8px;font-size:13px}
+  .qe-voice-review{gap:4px}
+  .qe-val{font-size:48px;min-height:52px;padding:2px 0}
+  .qe-keys{gap:6px}
+  .qe-key,.qe-enum{min-height:36px;font-size:22px;border-radius:12px}
+  .qe-nav{margin-top:8px}
+  .qe-mode .chip{min-height:36px}
+  .qe-mode-chips{display:flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+}
 .qe-mode{display:flex;align-items:flex-start;gap:10px;margin:0 0 8px;flex-shrink:0}
 .qe-mode-chips{flex:1;min-width:0}
 .qe-mode .chip{min-height:40px;padding:0 12px;font-size:14px}
