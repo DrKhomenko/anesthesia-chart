@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  CLINIC_SETTINGS_ID, clinicBlockNames, clinicInfusionUnits, clinicLocalAnesthetics, clinicVentModes, db, defaultGasOf, getLocalSettings, saveLocalSettings, saveWithAudit,
+  CLINIC_SETTINGS_ID, clinicBlockNames, clinicInfusionUnits, clinicLocalAnesthetics, clinicVentModes, db, defaultGasOf, getLocalSettings, updateLocalSettings, saveWithAudit,
   type ClinicSettings, type LocalSettings,
 } from '../db/db';
 import { canAddCatalogItem, parseNum } from '../core/logic';
@@ -35,9 +35,8 @@ export function AnesthesiaSettingsSection({ onSaved }: { onSaved: (fn: () => Pro
   if (!cs || !loc) return null;
   const putClinic = (p: Partial<ClinicSettings>) => onSaved(() => saveWithAudit(db.clinicSettings, 'ClinicSettings', { ...cs, ...p }));
   const putLoc = (p: Partial<LocalSettings>) => onSaved(async () => {
-    const next = { ...loc, ...p };
+    const next = await updateLocalSettings(p);
     setLoc(next);
-    await saveLocalSettings(next);
   });
   const units = clinicInfusionUnits(cs);
   const gas = defaultGasOf(cs);

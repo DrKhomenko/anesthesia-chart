@@ -7,6 +7,7 @@ import { AdminRow, CalcCard, AddDrugForm, CONC, DOSE, ROUTES, ROUTE_CHIP } from 
 import type { SaveState } from './App';
 import { requestTimerStart } from './timerStart';
 import { formatInterval, parseIntervalMin } from '../core/timers';
+import { Overlay } from './overlay';
 
 /** Препараты одного этапа (индукция, пробуждение…) — те же строки, расчёт мг/мл и список доз, что в премедикации. */
 export function PhaseDrugs({ c, phase, title, onSaved, emptyText }: { c: CaseRec; phase: DrugPhase; title: string; onSaved: (s: SaveState) => void; emptyText?: string }) {
@@ -77,7 +78,7 @@ export function PhaseDrugs({ c, phase, title, onSaved, emptyText }: { c: CaseRec
       </div>
     </section>}
     {selected && <CalcCard a={selected} weightKg={c.weightKg} onPatch={(p, reason) => void patch(selected, p, reason)} />}
-    {pick && <div className="ov" onClick={() => { setPick(false); setAdding(null); }} role="presentation">
+    {pick && <Overlay className="ov" onClick={() => { setPick(false); setAdding(null); }}>
       <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Препарат">
         <div className="grab" /><div className="sh">Выбрать препарат</div>
         <label className="field" style={{ marginBottom: 10 }}><span className="fl">Поиск или новое название</span>
@@ -89,6 +90,6 @@ export function PhaseDrugs({ c, phase, title, onSaved, emptyText }: { c: CaseRec
         {canAddName && <button className="btn pri" style={{ width: '100%', marginTop: 12 }} onClick={() => setAdding(q.trim())}>+ Добавить «{q.trim()}» в справочник</button>}
         {adding != null && <AddDrugForm name={adding} onCancel={() => setAdding(null)} onSaved={d => void addDrug(d)} />}
       </div>
-    </div>}
+    </Overlay>}
   </>;
 }

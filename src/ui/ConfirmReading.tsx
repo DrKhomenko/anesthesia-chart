@@ -5,6 +5,7 @@ import { calcMap, fmt, parseNum } from '../core/logic';
 import { isOutOfRange, type ParsedValue } from '../core/vision';
 import { FLAG_HINT, type OcrReason } from '../core/ocr';
 import { TimePicker } from './pickers';
+import { Overlay } from './overlay';
 
 export interface ConfirmState {
   type: DeviceType;
@@ -76,7 +77,7 @@ export function ConfirmReading({ state, onCancel, onConfirm }: {
   const seenImage = state.sentImageUrl || state.previewUrl;
   const hasSeen = !!(seenImage || state.rawAnswer || state.modelUsed);
 
-  return <div className="ov center" onClick={onCancel} role="presentation">
+  return <Overlay className="ov center" onClick={onCancel}>
     <div className="sheet wide" onClick={e => e.stopPropagation()} role="dialog" aria-label={title}>
       <div className="shtitle">
         <div className="ttl">{title} · {state.device.name}</div>
@@ -133,5 +134,5 @@ export function ConfirmReading({ state, onCancel, onConfirm }: {
         <button className="btn pri" onClick={commit}>Подтвердить</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }

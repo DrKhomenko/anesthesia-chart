@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { canAddCatalogItem, checkLimit, dosePresets, fmt, fmtTime, generateTimeList, parseNum, parseTimeInput, type DoseUnit, type ExamLabLimit, type ExamLabParam, type Species } from '../core/logic';
+import { Overlay } from './overlay';
 
 const NUM = { inputMode: 'decimal' as const, autoComplete: 'off' as const };
 
@@ -32,7 +33,7 @@ export function TimePicker({ label, value, onChange, cls = '' }: { label?: strin
       {label && <span className="fl">{label}</span>}
       <span className="tpval">{display}</span>
     </button>
-    {open && <div className="ov" onClick={() => setOpen(false)} role="presentation">
+    {open && <Overlay className="ov" onClick={() => setOpen(false)}>
       <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label={label ?? 'Время'}>
         <div className="grab" />
         <div className="sh">{label ?? 'Время'}</div>
@@ -52,7 +53,7 @@ export function TimePicker({ label, value, onChange, cls = '' }: { label?: strin
           <button className="btn sm sec" onClick={applyManual} disabled={!parseTimeInput(manual, now)}>ОК</button>
         </div>
       </div>
-    </div>}
+    </Overlay>}
   </>;
 }
 
@@ -72,7 +73,7 @@ export function DosePicker({ label, value, unit, onChange, onUnit, min, max, rec
       {label && <span className="fl">{label}</span>}
       <span className="tpval">{value ? `${value} ${unitRu}` : '—'}</span>
     </button>
-    {open && <div className="ov" onClick={() => setOpen(false)} role="presentation">
+    {open && <Overlay className="ov" onClick={() => setOpen(false)}>
       <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label={label ?? 'Доза'}>
         <div className="grab" />
         <div className="sh">{label ?? 'Доза'}</div>
@@ -95,7 +96,7 @@ export function DosePicker({ label, value, unit, onChange, onUnit, min, max, rec
           <button className="btn sm pri" disabled={!(Number.isFinite(n) && n > 0)} onClick={() => apply(manual.trim())}>ОК</button>
         </div>
       </div>
-    </div>}
+    </Overlay>}
   </>;
 }
 
@@ -143,10 +144,11 @@ export function LimitedField({ label, value, onChange, param, species, limits, c
   </label>;
 }
 
-export function Field({ label, value, onChange, placeholder, num, cls = '', children }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; num?: boolean; cls?: string; children?: ReactNode;
+export function Field({ label, value, onChange, placeholder, num, cls = '', children, name }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; num?: boolean; cls?: string; children?: ReactNode; name?: string;
 }) {
   return <label className={`field ${cls}`}><span className="fl">{label}</span>
-    <input value={value} placeholder={placeholder ?? '—'} onChange={e => onChange(e.target.value)} {...(num ? NUM : { autoComplete: 'off' })} />
+    <input value={value} placeholder={placeholder ?? '—'} name={name} onChange={e => onChange(e.target.value)}
+      {...(num ? NUM : { autoComplete: 'off', autoCorrect: 'off', autoCapitalize: 'off', spellCheck: false })} />
     {children}</label>;
 }

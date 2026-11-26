@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as PE } from 'react';
 import { defaultQuad, detectScreenQuad, sanitizeQuad, type Point, type Pix, type Quad } from '../core/geom';
 import { releaseCanvas } from './errorText';
+import { Overlay } from './overlay';
 
 function imageToPix(img: HTMLImageElement): Pix {
   const c = document.createElement('canvas');
@@ -70,7 +71,7 @@ export function ScreenAlign({ src, onCancel, onConfirm, initialQuad }: {
   const pts = [quad.tl, quad.tr, quad.br, quad.bl];
   const poly = pts.map(p => `${p.x * 100}%,${p.y * 100}%`).join(' ');
 
-  return <div className="ov center" onClick={onCancel} role="presentation">
+  return <Overlay className="ov center" onClick={onCancel}>
     <div className="sheet wide" onClick={e => e.stopPropagation()} role="dialog" aria-label="Углы экрана">
       <div className="shtitle"><div className="ttl">Углы экрана прибора</div></div>
       <div className="muted small" style={{ marginBottom: 12 }}>
@@ -95,5 +96,5 @@ export function ScreenAlign({ src, onCancel, onConfirm, initialQuad }: {
         <button className="btn pri" onClick={() => onConfirm(sanitizeQuad(quad))}>Распознать</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }

@@ -1,28 +1,45 @@
 import { useEffect, useState } from 'react';
-import { getLocalSettings, saveLocalSettings, type LocalSettings } from '../db/db';
-import { onSyncChange, runSync, syncSignIn, syncSignOut } from '../sync/run';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { getLocalSettings, updateLocalSettings } from '../db/db';
+import { runSync, syncSignIn, syncSignOut } from '../sync/run';
 import { validSupabaseUrl } from '../sync/core';
 
 /** Синхронизация между устройствами через Supabase. По умолчанию выключена; без неё карта работает полностью. */
 export function SyncSection() {
-  const [s, setS] = useState<LocalSettings | null>(null);
+  const s = useLiveQuery(() => getLocalSettings(), []) ?? null;
   const [f, setF] = useState({ url: '', key: '', email: '', password: '' });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const load = async () => { const x = await getLocalSettings(); setS(x); return x; };
+  const [filled, setFilled] = useState(false);
   useEffect(() => {
-    void load().then(x => setF(v => ({ ...v, url: x.syncUrl ?? '', key: x.syncAnonKey ?? '', email: x.syncEmail ?? '' })));
-    return onSyncChange(() => void load());
-  }, []);
+    if (!s || filled) return;
+    setF(v => ({ ...v, url: s.syncUrl ?? '', key: s.syncAnonKey ?? '', email: s.syncEmail ?? '' }));
+    setFilled(true);
+  }, [s, filled]);
   if (!s) return null;
   const on = !!s.syncEnabled;
-  const signedIn = !!s.syncRefreshToken;
-  const toggle = async () => { await saveLocalSettings({ ...s, syncEnabled: !on }); await load(); if (!on && signedIn) void runSync(); };
+  const signedIn = !!s.syncRefreshToken?.trim();
+  const toggle = async () => {
+    const next = await updateLocalSettings({ syncEnabled: !on });
+    if (!on && next.syncRefreshToken) void runSync({ manual: true });
+  };
   const doSignIn = async () => {
     setBusy(true); setMsg(null);
-    try { await syncSignIn(f.url, f.key, f.email, f.password); setF({ ...f, password: '' }); setMsg('Вход выполнен'); await runSync(); }
-    catch (e) { setMsg(`Не удалось войти: ${e instanceof Error ? e.message : String(e)}`); }
-    finally { setBusy(false); await load(); }
+    try {
+      await syncSignIn(f.url, f.key, f.email, f.password);
+      setF(v => ({ ...v, password: '' }));
+      const r = await runSync({ manual: true });
+      const cur = await getLocalSettings();
+      setMsg(r ? syncOkMsg(r) : (cur.syncLastError ?? 'Вход выполнен, синхронизация не выполнена'));
+    } catch (e) { setMsg(`Не удалось войти: ${e instanceof Error ? e.message : String(e)}`); }
+    finally { setBusy(false); }
+  };
+  const doSyncNow = async () => {
+    setBusy(true); setMsg(null);
+    const r = await runSync({ manual: true });
+    const cur = await getLocalSettings();
+    setBusy(false);
+    setMsg(r ? syncOkMsg(r) : (cur.syncLastError ?? 'Синхронизация не выполнена'));
   };
   const canSignIn = validSupabaseUrl(f.url) && f.key.trim().length > 20 && f.email.includes('@') && f.password.length > 0;
   return <section className="card" style={{ marginTop: 16 }}>
@@ -43,7 +60,7 @@ export function SyncSection() {
         <div className="muted small">Пароль не сохраняется — только ключ входа на этом устройстве.</div>
       </> : <div className="row" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ flex: 1 }}>Вход: <b>{s.syncEmail}</b></span>
-        <button className="btn sm pri" disabled={busy} onClick={async () => { setBusy(true); const r = await runSync(); setBusy(false); setMsg(r ? `Отправлено ${r.pushed}, получено ${r.pulled}${r.conflicts ? `, конфликтов ${r.conflicts} (старые версии в истории правок)` : ''}` : null); }}>Синхронизировать сейчас</button>
+        <button className="btn sm pri" disabled={busy} onClick={() => void doSyncNow()}>{busy ? 'Синхронизирую…' : 'Синхронизировать сейчас'}</button>
         <button className="btn sm sec" onClick={() => void syncSignOut()}>Выйти</button>
       </div>}
       <div className="muted small">
@@ -53,4 +70,8 @@ export function SyncSection() {
       {msg && <div className="note">{msg}</div>}
     </div>}
   </section>;
+}
+
+function syncOkMsg(r: { pushed: number; pulled: number; conflicts: number }): string {
+  return `Отправлено ${r.pushed}, получено ${r.pulled}${r.conflicts ? `, конфликтов ${r.conflicts} (старые версии в истории правок)` : ''}`;
 }

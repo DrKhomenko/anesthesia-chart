@@ -530,7 +530,17 @@ export async function getLocalSettings(database: ChartDB = db): Promise<LocalSet
   return merged;
 }
 
-/** Ключ API не пишем в историю правок. */
+/** Ключ API не пишем в историю правок. Полная запись — для совместимости; обычные правки — через updateLocalSettings. */
 export async function saveLocalSettings(next: LocalSettings, database: ChartDB = db): Promise<void> {
   await database.localSettings.put({ ...next, id: LOCAL_SETTINGS_ID });
+}
+
+/** Слияние с текущей записью в одной транзакции, чтобы раздел Настроек не затирал чужие поля (вход в синхронизацию и т.п.). */
+export async function updateLocalSettings(patch: Partial<LocalSettings>, database: ChartDB = db): Promise<LocalSettings> {
+  return database.transaction('rw', database.localSettings, async () => {
+    const cur = await getLocalSettings(database);
+    const next: LocalSettings = { ...cur, ...patch, id: LOCAL_SETTINGS_ID };
+    await database.localSettings.put(next);
+    return next;
+  });
 }

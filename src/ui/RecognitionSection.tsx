@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getLocalSettings, saveLocalSettings, type LocalSettings, type RecognitionProvider } from '../db/db';
+import { getLocalSettings, updateLocalSettings, type LocalSettings, type RecognitionProvider } from '../db/db';
 import {
   ALL_KNOWN_VISION_MODELS, OPENROUTER_BASE_URL, OPENROUTER_CREDITS_URL, OPENROUTER_DEFAULT_MODEL,
   OPENROUTER_FREE_VISION_MODELS, OPENROUTER_KEYS_URL, OPENROUTER_PAID_FALLBACK_MODELS,
@@ -48,19 +48,19 @@ export function RecognitionSection({ onSaved }: { onSaved: (fn: () => Promise<un
   useEffect(() => { draftRef.current = keyDraft; dirtyRef.current = keyDirty; }, [keyDraft, keyDirty]);
   useEffect(() => () => {
     if (keyTimer.current) clearTimeout(keyTimer.current);
-    if (dirtyRef.current && sRef.current) {
-      const next = { ...sRef.current, recognitionApiKey: draftRef.current.trim() };
-      void saveLocalSettings(next);
+    if (dirtyRef.current) {
+      void updateLocalSettings({ recognitionApiKey: draftRef.current.trim() });
     }
   }, []);
 
   if (!s) return null;
 
   const patch = (p: Partial<LocalSettings>) => {
-    const next = { ...s, ...p };
-    setS(next);
-    sRef.current = next;
-    onSaved(() => saveLocalSettings(next));
+    onSaved(async () => {
+      const next = await updateLocalSettings(p);
+      setS(next);
+      sRef.current = next;
+    });
   };
   const saveKey = (value = keyDraft) => {
     const trimmed = value.trim();

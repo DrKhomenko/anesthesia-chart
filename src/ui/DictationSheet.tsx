@@ -9,6 +9,7 @@ import { DEFAULT_VENT_MODES } from '../core/ventModes';
 import { DictationReview } from './DictationReview';
 import { saveDictation } from './dictationSave';
 import type { SaveState } from './App';
+import { Overlay } from './overlay';
 
 export const DICTATION_HINT = 'Нажмите 🎤 на клавиатуре и говорите по ходу: «на столе Барсик, семь лет, поступил на удаление новообразования, ввёл цефтриаксон, дал золетил, интубировал трубкой 6.0, пульс 120»';
 export const DICTATION_PLACEHOLDER = 'на столе Барсик, 7 лет, ввёл цефтриаксон, интубировал трубкой 6.0';
@@ -57,7 +58,7 @@ export function DictationSheet({ c, onClose, onSaved }: { c: CaseRec; onClose: (
     onClose();
   };
 
-  return <div className="ov center qe-ov" onClick={onClose} role="presentation">
+  return <Overlay className="ov center qe-ov" onClick={onClose}>
     <div className="sheet wide dc-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Диктовка">
       <div className="shtitle"><div className="ttl">Диктовка</div></div>
       <form className={`qe-voice ${parsed ? 'has-result' : ''}`} onSubmit={e => { e.preventDefault(); parse(text, true); }}>
@@ -91,5 +92,5 @@ export function DictationSheet({ c, onClose, onSaved }: { c: CaseRec; onClose: (
           Записать{keep.length + vitalKeys.length > 0 ? ` (${keep.length + vitalKeys.length})` : ''}</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }

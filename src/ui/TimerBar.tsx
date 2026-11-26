@@ -11,6 +11,7 @@ import {
 import { holdWakeLock, playReminderChime, unlockReminderAudio } from './reminderAudio';
 import { onTimerStartRequest, type TimerStartRequest } from './timerStart';
 import type { SaveState } from './App';
+import { Overlay } from './overlay';
 
 export function TimerBar({ c, onSaved }: { c: CaseRec; onSaved: (s: SaveState) => void }) {
   const rows = useLiveQuery(async () => liveTimers(await db.caseTimers.where('caseId').equals(c.id).toArray()), [c.id]) ?? [];
@@ -193,7 +194,7 @@ function TimerSheet({ req, onCancel, onRepeat, onOnce }: {
     else if (isBlock) onOnce(title.trim() || defaultBlockTimerTitle(req.block.blockName), chosen, { regionalBlockId: req.block.id });
     else onOnce(title.trim(), chosen);
   };
-  return <div className="ov center" onClick={onCancel} role="presentation">
+  return <Overlay className="ov center" onClick={onCancel}>
     <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Таймер">
       <div className="grab" /><div className="sh">{isRepeat ? `Напомнить: ${req.admin.drugNameSnapshot}` : isBlock ? 'Оценить блок' : 'Таймер'}</div>
       {!isRepeat && <label className="field" style={{ marginBottom: 10 }}><span className="fl">Подпись</span>
@@ -222,5 +223,5 @@ function TimerSheet({ req, onCancel, onRepeat, onOnce }: {
         <button type="button" className="btn pri" disabled={!can} onClick={commit}>Запустить</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }

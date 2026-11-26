@@ -8,6 +8,7 @@ import { requestTimerStart } from './timerStart';
 import { formatInterval, parseIntervalMin } from '../core/timers';
 import { TimePicker, DosePicker, Field } from './pickers';
 import { hasNoDoseFlag } from '../core/dictationApply';
+import { Overlay } from './overlay';
 
 export const ROUTES: RouteRu[] = ['в/в', 'в/м', 'п/к', 'внутрь'];
 export const CONC: Record<ConcUnit, string> = { 'mg/ml': 'мг/мл', 'mcg/ml': 'мкг/мл', percent: '%' };
@@ -165,7 +166,7 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
     <button className="btn pri" onClick={async () => { if (c.stage === 'header' || c.stage === 'premed') update({ stage: 'induction' }); await flush(); go(`/case/${c.id}/induction`); }}>Перейти к индукции →</button>
   </div>
 
-  {pick && <div className="ov" onClick={() => { setPick(false); setAdding(null); }} role="presentation">
+  {pick && <Overlay className="ov" onClick={() => { setPick(false); setAdding(null); }}>
     <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Препарат">
       <div className="grab" /><div className="sh">Выбрать препарат</div>
       <label className="field" style={{ marginBottom: 10 }}><span className="fl">Поиск или новое название</span>
@@ -177,7 +178,7 @@ export function PremedScreen({ id, onSaved }: { id: string; onSaved: (s: SaveSta
       {canAddName && <button className="btn pri" style={{ width: '100%', marginTop: 12 }} onClick={() => setAdding(q.trim())}>+ Добавить «{q.trim()}» в справочник</button>}
       {adding != null && <AddDrugForm name={adding} onCancel={() => setAdding(null)} onSaved={d => void addDrug(d)} />}
     </div>
-  </div>}
+  </Overlay>}
   </>;
 }
 

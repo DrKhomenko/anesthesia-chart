@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  currentRateLabel, formatVolumeMl, infusionChangesText, infusionRateUnitsOf,
-  infusionVolumeMl, isInfusionRunning, liveInfusions, nextInfusionLine, startedAtOf,
+  currentRateLabel, formatVolumeMl, infusionCatalogMatches, infusionChangesText, infusionFormDraft,
+  infusionRateUnitsOf, infusionVolumeMl, isInfusionRunning, liveInfusions, nextInfusionLine, startedAtOf,
   DEFAULT_INFUSION_RATE_UNITS, type InfusionView,
 } from './infusions';
 
@@ -63,5 +63,26 @@ describe('rate and running', () => {
   });
   it('текст изменений', () => {
     expect(infusionChangesText(row, s => s.slice(11, 16))).toBe('14:30 — 160 мл/ч; 14:45 — 10 мл/ч');
+  });
+});
+
+
+describe('форма новой инфузии', () => {
+  const drugs = [
+    { name: 'Цефазолин', genericName: 'цефазолин' },
+    { name: 'Стерофундин', genericName: '' },
+    { name: 'Фентанил', genericName: 'fentanyl' },
+  ];
+  it('новая инфузия открывается с пустым именем, даже если в справочнике есть Цефазолин', () => {
+    expect(infusionFormDraft(null)).toEqual({ name: '', drugId: null });
+    expect(infusionFormDraft(undefined)).toEqual({ name: '', drugId: null });
+    expect(infusionCatalogMatches(drugs, '')).toEqual([]);
+  });
+  it('правка и явный старт с препарата сохраняют имя', () => {
+    expect(infusionFormDraft({ solutionName: 'Цефазолин', drugId: 'd1' })).toEqual({ name: 'Цефазолин', drugId: 'd1' });
+  });
+  it('подсказки справочника только после поиска', () => {
+    expect(infusionCatalogMatches(drugs, 'цеф').map(d => d.name)).toEqual(['Цефазолин']);
+    expect(infusionCatalogMatches(drugs, 'FENT').map(d => d.name)).toEqual(['Фентанил']);
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getLocalSettings, saveLocalSettings, type CaseRec, type LocalSettings } from '../db/db';
+import { getLocalSettings, updateLocalSettings, type CaseRec, type LocalSettings } from '../db/db';
 import {
   formatCountdown, isReminderDue, lastVitalsAt, msUntilDue, normalizeReminderInterval,
   reminderActive, snoozeUntil,
@@ -71,10 +71,8 @@ export function ReminderBar({ c, ticks, onAddEntry }: {
       setSoundOn(reminderAudioReady());
       window.setTimeout(() => setSoundOn(reminderAudioReady()), 200);
     }
-    const cur = loc ?? await getLocalSettings();
-    const next = { ...cur, ...patch };
+    const next = await updateLocalSettings(patch);
     setLoc(next);
-    await saveLocalSettings(next);
   };
 
   const toggle = () => {

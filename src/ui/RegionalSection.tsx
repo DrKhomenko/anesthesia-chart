@@ -15,6 +15,7 @@ import { TimePicker, Field } from './pickers';
 import type { SaveState } from './App';
 import { requestTimerStart } from './timerStart';
 import { parseIntervalMin } from '../core/timers';
+import { Overlay } from './overlay';
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫'] as const;
 const EMPTY_LINE = (): RegionalAnestheticLine => ({ name: '', concentrationPct: '', volumeMl: '' });
@@ -159,7 +160,7 @@ function BlockSheet({ c, draft, phase, names, catalog, drugs, admins, others, on
   const filteredNames = names.filter(n => !nameQ.trim() || n.toLowerCase().includes(nameQ.trim().toLowerCase()));
   const showAddName = nameQ.trim() && canAddCatalogItem(nameQ, names.map((n, i) => ({ id: String(i), name: n }))).ok;
 
-  return <div className="ov center" onClick={onCancel} role="presentation">
+  return <Overlay className="ov center" onClick={onCancel}>
     <div className="sheet wide" onClick={e => e.stopPropagation()} role="dialog" aria-label="Регионарная анестезия">
       <div className="grab" /><div className="sh">{draft ? 'Блокада' : 'Новая блокада'}</div>
       <div className="sheet-body g" style={{ gap: 10 }}>
@@ -219,7 +220,7 @@ function BlockSheet({ c, draft, phase, names, catalog, drugs, admins, others, on
         <button type="button" className="btn pri" disabled={!canSave} onClick={commit}>Сохранить</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }
 
 function NumPadField({ label, value, active, onFocus }: { label: string; value: string; active: boolean; onFocus: () => void }) {

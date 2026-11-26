@@ -6,12 +6,13 @@ import {
 } from '../db/db';
 import { fmtTime } from '../core/logic';
 import {
-  currentRateLabel, formatVolumeMl, infusionChangesText, infusionVolumeMl,
-  isInfusionRunning, liveInfusions, ML_PER_HOUR, nextInfusionLine, sortedSegments, startedAtOf,
+  currentRateLabel, formatVolumeMl, infusionCatalogMatches, infusionChangesText, infusionFormDraft,
+  infusionVolumeMl, isInfusionRunning, liveInfusions, ML_PER_HOUR, nextInfusionLine, sortedSegments, startedAtOf,
   type InfusionSegment,
 } from '../core/infusions';
 import { TimePicker, Field } from './pickers';
 import type { SaveState } from './App';
+import { Overlay } from './overlay';
 
 export function InfusionsSection({ c, onSaved, compact }: { c: CaseRec; onSaved: (s: SaveState) => void; compact?: boolean }) {
   const rows = useLiveQuery(async () => {
@@ -69,6 +70,7 @@ export function InfusionsSection({ c, onSaved, compact }: { c: CaseRec; onSaved:
       </div>
     </section>
     {edit && <InfusionSheet
+      key={edit === 'new' ? 'new' : edit.id}
       caseId={c.id}
       draft={edit === 'new' ? null : edit}
       drugs={drugs}
@@ -96,15 +98,15 @@ function InfusionSheet({ caseId, draft, drugs, units, defaultLine, onCancel, onS
   onCancel: () => void; onSave: (row: Infusion) => void;
 }) {
   const first = draft ? sortedSegments(draft)[0] : undefined;
-  const [name, setName] = useState(draft?.solutionName ?? '');
-  const [drugId, setDrugId] = useState<string | null>(draft?.drugId ?? null);
+  const initial = infusionFormDraft(draft);
+  const [name, setName] = useState(initial.name);
+  const [drugId, setDrugId] = useState<string | null>(initial.drugId);
   const [rate, setRate] = useState(first?.rate ?? '');
   const [unit, setUnit] = useState(first?.rateUnit || units[0] || ML_PER_HOUR);
   const [from, setFrom] = useState(first?.from ?? new Date().toISOString());
   const [note, setNote] = useState(draft?.note ?? '');
   const [q, setQ] = useState('');
-  const nq = q.trim().toLowerCase();
-  const filtered = drugs.filter(d => !nq || d.name.toLowerCase().includes(nq) || d.genericName.toLowerCase().includes(nq));
+  const filtered = infusionCatalogMatches(drugs, q);
   const pick = (d: Drug) => { setName(d.name); setDrugId(d.id); setQ(''); };
   const commit = () => {
     const n = name.trim() || q.trim();
@@ -118,17 +120,17 @@ function InfusionSheet({ caseId, draft, drugs, units, defaultLine, onCancel, onS
       : { ...meta(), caseId, line: defaultLine, solutionName: n, drugId, segments, note };
     onSave(rec);
   };
-  return <div className="ov center" onClick={onCancel} role="presentation">
+  return <Overlay className="ov center" onClick={onCancel}>
     <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Инфузия">
       <div className="grab" /><div className="sh">{draft ? 'Инфузия' : 'Новая инфузия'}</div>
       <div className="g" style={{ gap: 10 }}>
-        <Field label="Препарат или раствор" value={name} onChange={v => { setName(v); setDrugId(null); }} placeholder="название" />
+        <Field label="Препарат или раствор" value={name} name="infusion-solution-name" onChange={v => { setName(v); setDrugId(null); }} placeholder="название" />
         <label className="field"><span className="fl">Из справочника</span>
-          <input value={q} placeholder="поиск" onChange={e => setQ(e.target.value)} /></label>
-        <div className="chipbar">
-          {(q ? filtered : drugs).slice(0, 12).map(d =>
+          <input value={q} placeholder="поиск" name="infusion-catalog-search" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} onChange={e => setQ(e.target.value)} /></label>
+        {filtered.length > 0 && <div className="chipbar">
+          {filtered.slice(0, 12).map(d =>
             <button key={d.id} type="button" className={`chip ${drugId === d.id ? 'on' : ''}`} onClick={() => pick(d)}>{d.name}</button>)}
-        </div>
+        </div>}
         <div className="g g2">
           <Field label="Скорость" value={rate} onChange={setRate} num />
           <TimePicker label="Начало" value={from} onChange={setFrom} />
@@ -144,7 +146,7 @@ function InfusionSheet({ caseId, draft, drugs, units, defaultLine, onCancel, onS
         <button type="button" className="btn pri" disabled={!name.trim() && !q.trim()} onClick={commit}>Сохранить</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }
 
 function RateSheet({ inf, units, onCancel, onSave }: {
@@ -159,7 +161,7 @@ function RateSheet({ inf, units, onCancel, onSave }: {
     const endedAt = inf.endedAt && inf.endedAt <= at ? null : inf.endedAt;
     onSave({ ...inf, endedAt, segments: [...(inf.segments ?? []), seg] });
   };
-  return <div className="ov center" onClick={onCancel} role="presentation">
+  return <Overlay className="ov center" onClick={onCancel}>
     <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Скорость инфузии">
       <div className="grab" /><div className="sh">Скорость · {inf.solutionName}</div>
       <div className="muted small" style={{ marginBottom: 10 }}>Сейчас: {currentRateLabel(inf)}. Новая скорость начнётся с указанного времени.</div>
@@ -176,14 +178,14 @@ function RateSheet({ inf, units, onCancel, onSave }: {
         <button type="button" className="btn pri" disabled={!rate.trim()} onClick={commit}>Записать</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }
 
 function StopSheet({ inf, onCancel, onSave }: {
   inf: Infusion; onCancel: () => void; onSave: (row: Infusion) => void;
 }) {
   const [at, setAt] = useState(new Date().toISOString());
-  return <div className="ov center" onClick={onCancel} role="presentation">
+  return <Overlay className="ov center" onClick={onCancel}>
     <div className="sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Остановить инфузию">
       <div className="grab" /><div className="sh">Остановить · {inf.solutionName}</div>
       <TimePicker label="Окончание" value={at} onChange={setAt} />
@@ -193,5 +195,5 @@ function StopSheet({ inf, onCancel, onSave }: {
         <button type="button" className="btn pri" onClick={() => onSave({ ...inf, endedAt: at })}>Остановить</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }

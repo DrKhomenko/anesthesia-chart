@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect } from 'vitest';
-import { ChartDB, saveWithAudit, seed, newCase, softDelete, addBreed, addDrugToFormulary, STARTER_BREEDS, CLINIC_SETTINGS_ID, LOCAL_SETTINGS_ID, upsertVitalTick, valuesToTickPatch, getLocalSettings, ensureRegionalDefaults, clinicBlockNames, clinicLocalAnesthetics, meta } from './db';
+import { ChartDB, saveWithAudit, seed, newCase, softDelete, addBreed, addDrugToFormulary, STARTER_BREEDS, CLINIC_SETTINGS_ID, LOCAL_SETTINGS_ID, upsertVitalTick, valuesToTickPatch, getLocalSettings, saveLocalSettings, updateLocalSettings, ensureRegionalDefaults, clinicBlockNames, clinicLocalAnesthetics, meta } from './db';
 import { PRESET_UMEC12_ID, PRESET_WATO_ID } from '../core/devices';
 
 describe('db', () => {
@@ -124,5 +124,49 @@ describe('обновление рамок предустановленных ш�
     await ensurePresetRegions(d);
     expect((await d.devices.get(PRESET_WATO_ID))!.regions).toEqual(WATO35_REGIONS);
     expect((await d.devices.get(PRESET_UMEC12_ID))!.regions.hr).toEqual({ x: 0.5, y: 0.5, w: 0.1, h: 0.1 });
+  });
+});
+
+
+describe('настройки устройства: слияние, а не затирание', () => {
+  it('updateLocalSettings не затирает поля синхронизации при правке другого раздела', async () => {
+    const d = new ChartDB('loc-merge-' + Math.random());
+    await seed(d);
+    await updateLocalSettings({
+      syncEnabled: true,
+      syncUrl: 'https://zaunkcdfafctqmyqmnhv.supabase.co',
+      syncAnonKey: 'eyJ-demo-anon',
+      syncEmail: 'clinic@example.com',
+      syncRefreshToken: 'refresh-token-keep',
+      syncLastOkAt: '2026-11-26T12:42:00.000Z',
+    }, d);
+    // как ReminderBar / распознавание / оборудование: правка только своих полей
+    await updateLocalSettings({ reminderEnabled: false, activeMonitorId: 'x' }, d);
+    const loc = await getLocalSettings(d);
+    expect(loc.syncEnabled).toBe(true);
+    expect(loc.syncUrl).toBe('https://zaunkcdfafctqmyqmnhv.supabase.co');
+    expect(loc.syncAnonKey).toBe('eyJ-demo-anon');
+    expect(loc.syncEmail).toBe('clinic@example.com');
+    expect(loc.syncRefreshToken).toBe('refresh-token-keep');
+    expect(loc.syncLastOkAt).toBe('2026-11-26T12:42:00.000Z');
+    expect(loc.reminderEnabled).toBe(false);
+    expect(loc.activeMonitorId).toBe('x');
+  });
+
+  it('устаревшая полная запись без полей синхронизации их стирает; слияние — нет', async () => {
+    const d = new ChartDB('loc-stale-' + Math.random());
+    await seed(d);
+    await updateLocalSettings({ syncEnabled: true, syncRefreshToken: 'keep-me', syncUrl: 'https://ex.supabase.co', syncAnonKey: 'key' }, d);
+    const stale = await getLocalSettings(d);
+    // имитация старого кода раздела: снимок без синхронизации, полный put
+    const rest = { ...stale };
+    delete rest.syncEnabled; delete rest.syncUrl; delete rest.syncAnonKey; delete rest.syncEmail;
+    delete rest.syncRefreshToken; delete rest.syncLastPulledAt; delete rest.syncLastOkAt; delete rest.syncLastError;
+    await saveLocalSettings({ ...rest, reminderEnabled: false }, d);
+    expect((await getLocalSettings(d)).syncRefreshToken).toBeUndefined();
+    await updateLocalSettings({ syncEnabled: true, syncRefreshToken: 'keep-me', syncUrl: 'https://ex.supabase.co', syncAnonKey: 'key' }, d);
+    await updateLocalSettings({ reminderEnabled: true }, d);
+    expect((await getLocalSettings(d)).syncRefreshToken).toBe('keep-me');
+    expect((await getLocalSettings(d)).reminderEnabled).toBe(true);
   });
 });

@@ -1,7 +1,8 @@
 import { useRef, useState, type PointerEvent as PE } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, saveWithAudit, softDelete, meta, getLocalSettings, saveLocalSettings, LOCAL_SETTINGS_ID, type DeviceRec, defaultLocalSettings } from '../db/db';
+import { db, saveWithAudit, softDelete, meta, updateLocalSettings, LOCAL_SETTINGS_ID, type DeviceRec, defaultLocalSettings } from '../db/db';
 import { DEVICE_TYPE_RU, FIELDS_BY_TYPE, PRESET_DEVICES, type DeviceType, type FieldRegion } from '../core/devices';
+import { Overlay } from './overlay';
 
 export function EquipmentSection({ onSaved }: { onSaved: (fn: () => Promise<unknown>) => void }) {
   const devices = useLiveQuery(() => db.devices.filter(d => !d.deletedAt).toArray(), []) ?? [];
@@ -10,9 +11,7 @@ export function EquipmentSection({ onSaved }: { onSaved: (fn: () => Promise<unkn
 
   const of = (t: DeviceType) => devices.filter(d => d.type === t).sort((a, b) => Number(b.isPreset) - Number(a.isPreset) || a.name.localeCompare(b.name, 'ru'));
   const setActive = (t: DeviceType, id: string) => onSaved(async () => {
-    const cur = loc ?? await getLocalSettings();
-    const next = { ...cur, [t === 'monitor' ? 'activeMonitorId' : 'activeMachineId']: id };
-    await saveLocalSettings(next);
+    await updateLocalSettings({ [t === 'monitor' ? 'activeMonitorId' : 'activeMachineId']: id });
   });
   const restorePresets = () => onSaved(async () => {
     for (const p of PRESET_DEVICES) {
@@ -74,7 +73,7 @@ function DeviceEditor({ initial, onClose, onSaved }: { initial: DeviceRec | 'new
     await saveWithAudit(db.devices, 'Device', { ...d, name, isUserAdded: isNew || d.isUserAdded });
     onClose();
   });
-  return <div className="ov center" onClick={onClose} role="presentation">
+  return <Overlay className="ov center" onClick={onClose}>
     <div className="sheet wide" onClick={e => e.stopPropagation()} role="dialog" aria-label="Прибор">
       <div className="grab" />
       <div className="sh">{isNew ? 'Новый прибор' : 'Шаблон прибора'}</div>
@@ -116,7 +115,7 @@ function DeviceEditor({ initial, onClose, onSaved }: { initial: DeviceRec | 'new
         <button className="btn pri" disabled={!d.name.trim() || d.fieldKeys.length === 0} onClick={save}>Сохранить</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }
 
 function RegionEditor({ src, fields, regions, activeKey, onActive, onChange, onClearPhoto }: {

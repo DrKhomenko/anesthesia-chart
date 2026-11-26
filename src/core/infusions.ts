@@ -115,3 +115,15 @@ export function formatVolumeMl(n: number | null): string {
 export function infusionChangesText(inf: { segments?: InfusionSegment[] | null }, time: (iso: string) => string): string {
   return sortedSegments(inf).map(s => `${time(s.from)} — ${rateLabel(s)}`).join('; ');
 }
+
+/** Начальные поля формы инфузии. Новая — пустое имя, без препарата; правка и явный старт с препарата сохраняют имя. */
+export function infusionFormDraft(src?: { solutionName?: string | null; drugId?: string | null } | null): { name: string; drugId: string | null } {
+  return { name: (src?.solutionName ?? '').trim() ? String(src!.solutionName) : '', drugId: src?.drugId ?? null };
+}
+
+/** Подсказки из справочника только после ввода поиска, чтобы при открытии «+ Инфузия» не всплывал первый препарат. */
+export function infusionCatalogMatches<T extends { name: string; genericName?: string }>(drugs: T[], query: string): T[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return drugs.filter(d => d.name.toLowerCase().includes(q) || (d.genericName ?? '').toLowerCase().includes(q));
+}

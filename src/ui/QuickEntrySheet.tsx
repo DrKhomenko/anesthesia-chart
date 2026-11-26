@@ -14,6 +14,7 @@ import { parseVoiceInput, VOICE_HINT, VOICE_PLACEHOLDER } from '../core/voicePar
 import { parseDictation, type DictDrugRef, type DictItem } from '../core/dictation';
 import { defaultPhase } from '../core/dictationApply';
 import { DictationReview } from './DictationReview';
+import { Overlay } from './overlay';
 
 export interface QuickEntryState {
   at: string;
@@ -205,7 +206,7 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange, dicta
   const ghost = !!field && fieldTouch === 'untouched' && raw === '' && prevText !== '' && !autoMap;
   const display = field ? (autoMap ? (fmt(calcMap(effSys, effDia) as number, 0) || effective || '—') : (effective || '—')) : '';
 
-  return <div className="ov center qe-ov" onClick={onCancel} role="presentation">
+  return <Overlay className="ov center qe-ov" onClick={onCancel}>
     <div className="sheet wide qe-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-label="Новая запись">
       <div className="shtitle">
         <div className="ttl">Новая запись {field && <span className="qe-step">{idx + 1}&nbsp;из&nbsp;{fields.length}</span>}</div>
@@ -314,7 +315,7 @@ export function QuickEntrySheet({ state, onCancel, onConfirm, onGasChange, dicta
         <button type="button" className="btn pri" onClick={commit} disabled={needGas}>Готово</button>
       </div>
     </div>
-  </div>;
+  </Overlay>;
 }
 
 function entryFieldOrderSafe(fields: EntryField[]): EntryField[] {
